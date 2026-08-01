@@ -1,0 +1,51 @@
+{
+  "name": "@luxalgo/vela-pinets",
+  "version": "0.1.0",
+  "description": "PineTS scripting engine for the Vela charting library — Pine Script indicators executed in-process or in a Web Worker, plugged into Vela's public ScriptingEngine port.",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "author": "LuxAlgo",
+  "repository": "https://github.com/LuxAlgo/Vela-pinets",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "playground": "vite"
+  },
+  "dependencies": {
+    "@luxalgo/vela": "file:../Vela"
+  },
+  "peerDependencies": {
+    "pinets": ">=0.9.29"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.0.0",
+    "pinets": "^0.9.29",
+    "tsup": "^8.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.0"
+  }
+}
