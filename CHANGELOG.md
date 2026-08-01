@@ -2,6 +2,32 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.0]
+
+### Added
+
+- **Strategies show their trades on the chart.** PineTS's broker emulator was already
+  running every `strategy()` script and computing the full ledger — this package simply
+  dropped it. The adapter now reads `ctx.strategy` and emits ONE execution per ORDER
+  FILL as `IndicatorModel.trades`, at the fill bar and price the emulator recorded (a
+  market order filled at the next bar's open shows there). Ledger slices of the same
+  fill merge back together: a reversal (an entry that flips the position) paints a
+  single entry marker carrying the summed quantity, and an exit order that closes
+  several lots FIFO paints once. Order ids label the markers; a `comment=` replaces the
+  id. Vela paints them as trade markers on the price pane (arrows + labels + fill-price
+  ticks — see Vela's changelog); both engines emit them identically (the channel rides
+  the model through the worker unchanged).
+
+### Fixed
+
+- **A strategy script now reaches the chart with its declared identity.** Three defects
+  hid it before: the prepare-time title regex only matched `indicator(` (every strategy
+  flashed a placeholder "Indicator" legend title), the run metadata only read
+  `ctx.indicator` — never set by a strategy — so the real title AND `overlay=true` were
+  dropped (an overlay strategy landed in its own pane), and the whole `ctx.strategy`
+  state was discarded. The declaration now falls back to `strategy()`'s config, and an
+  overlay strategy routes to the price pane like any overlay indicator.
+
 ## [v0.1.0]
 
 ### Changed

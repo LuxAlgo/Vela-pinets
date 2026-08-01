@@ -3,7 +3,8 @@ import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import type { SeriesSpec, SeriesPoint, LineLikeKind, LineStyle, CandleSeries, CandleBarColor } from '@luxalgo/vela/plugin';
 import type { Fill, FillGradientStop, Background, PriceLine } from '@luxalgo/vela/plugin';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '@luxalgo/vela/plugin';
-import type { PineRun, PinePlot } from './PineRun';
+import type { TradeExecution } from '@luxalgo/vela/plugin';
+import type { PineRun, PinePlot, PineTrade } from './PineRun';
 import { asString, asNumber } from './PineRun';
 import { classifyStyle } from './styleMap';
 import { normColor } from './colors';
@@ -85,7 +86,7 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
                 break;
             case 'markers':
                 // plotshape/plotchar/plotarrow → rendered as labels (shapes + callouts)
-                // so we get TV-accurate diamonds/triangles/label bubbles and absolute /
+                // so we get faithful diamonds/triangles/label bubbles and absolute /
                 // pane top-bottom placement that native bar-relative markers can't do.
                 labels.push(...markersToLabels(plot, instanceId, ids));
                 break;
@@ -113,6 +114,7 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
         });
     }
 
+    const trades = run.trades ? tradesToExecutions(run.trades) : [];
     const model: IndicatorModel = {
         id: instanceId,
         title: run.meta.title,
@@ -129,10 +131,68 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
         linefills,
         tables,
         barColors: barColors.length ? barColors : undefined,
+        trades: trades.length ? trades : undefined,
         inputs: [],
         inputValues: {},
     };
     return { model, warnings };
+}
+
+/**
+ * Ledger trades → chart order executions, ONE MARKER PER ORDER FILL. The ledger splits
+ * a fill across trades (a reversal entry closes the old trade AND opens the new one; one
+ * exit order can close several lots FIFO), but on the chart those slices are the same
+ * order executing once — so ledger fills sharing (bar, direction, order label) merge
+ * back into a single execution whose quantity is the sum. A merged reversal reads as an
+ * ENTRY (that is what the order was), keeping the entry side's color.
+ *
+ * Markers land on the FILL bar/price the broker emulator recorded — a market order
+ * filled at the next bar's open shows there, exactly where it executed. The `comment`
+ * given to an order replaces its id as the marker label.
+ */
+function tradesToExecutions(trades: PineTrade[]): TradeExecution[] {
+    const groups = new Map<string, TradeExecution>();
+    const fill = (e: TradeExecution): void => {
+        const key = `${e.time}|${e.side}|${e.label ?? ''}`;
+        const g = groups.get(key);
+        if (!g) {
+            groups.set(key, e);
+            return;
+        }
+        g.qty = (g.qty ?? 0) + (e.qty ?? 0);
+        if (e.kind === 'entry' && g.kind === 'exit') {
+            // The entry slice names the merged fill: a reversal is an entry order.
+            g.kind = 'entry';
+            g.price = e.price;
+            g.tradeId = e.tradeId;
+        }
+    };
+    for (const t of trades) {
+        const long = t.size > 0;
+        const qty = Math.abs(t.size);
+        fill({
+            time: t.entry_time,
+            price: t.entry_price,
+            side: long ? 'buy' : 'sell',
+            kind: 'entry',
+            label: t.entry_comment ?? t.entry_id,
+            qty,
+            tradeId: t.id,
+        });
+        if (t.status === 'closed' && t.exit_time != null && t.exit_price != null) {
+            fill({
+                time: t.exit_time,
+                price: t.exit_price,
+                side: long ? 'sell' : 'buy',
+                kind: 'exit',
+                label: t.exit_comment ?? t.exit_id,
+                qty,
+                tradeId: t.id,
+            });
+        }
+    }
+    // Chronological, stable: a same-bar round trip keeps entry before exit.
+    return [...groups.values()].sort((a, b) => a.time - b.time);
 }
 
 function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: string, title: string): SeriesSpec {
@@ -144,7 +204,7 @@ function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: stri
     }
     const kind = cls;
     const repColor = normColor(representativeColor(plot));
-    // Hidden = `display.none` / `display.data_window` (TV: not on chart) or a `na`
+    // Hidden = `display.none` / `display.data_window` (declared off-chart) or a `na`
     // color. Kept as a series (with points) so it can still anchor a fill().
     const display = asString(plot.options.display);
     const hidden = display === 'none' || display === 'data_window' || !repColor;
