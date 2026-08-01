@@ -49,7 +49,9 @@ export interface PineToken {
 export function preparePine(source: string, instanceId: string): PreparedScript {
     const inputs = mapInputs(Indicator.from(source).getInputsMeta());
     const overlay = /overlay\s*[:=]\s*true/.test(source);
-    const title = source.match(/indicator\(\s*["']([^"']+)["']/)?.[1] ?? 'Indicator';
+    // strategy() declares exactly like indicator() — without the alternative, every
+    // strategy script showed a placeholder "Indicator" legend title until its first run.
+    const title = source.match(/(?:indicator|strategy)\(\s*["']([^"']+)["']/)?.[1] ?? 'Indicator';
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
