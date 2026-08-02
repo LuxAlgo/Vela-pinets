@@ -1,4 +1,4 @@
-import type { PineRun, PinePlot, PinePlotPoint, PineRunMeta } from './PineRun';
+import type { PineRun, PinePlot, PinePlotPoint, PineRunMeta, PineTrade } from './PineRun';
 import { asString, asNumber } from './PineRun';
 
 /** Loose view of the raw PineTS Context (only what we read). */
@@ -6,6 +6,11 @@ interface RawContext {
     fullContext?: RawContext;
     plots?: Record<string, RawPlot | undefined>;
     indicator?: Record<string, unknown>;
+    strategy?: {
+        config?: Record<string, unknown>;
+        opentrades?: unknown[];
+        closedtrades?: unknown[];
+    };
 }
 interface RawPlot {
     title?: unknown;
@@ -44,14 +49,17 @@ function dedupeByTime(data: PinePlotPoint[]): PinePlotPoint[] {
 export function normalizeContext(ctx: unknown): PineRun {
     const c = (ctx ?? {}) as RawContext;
     const root = c.fullContext ?? c;
-    const indicator = root.indicator ?? {};
+    // A strategy script never calls Core.indicator(), so `ctx.indicator` stays unset and
+    // the declaration lives on `ctx.strategy.config` (same field names) — read it there,
+    // or an overlay strategy lands in its own pane with a placeholder legend title.
+    const declared = root.indicator ?? root.strategy?.config ?? {};
 
     const meta: PineRunMeta = {
-        title: asString(indicator.title) ?? 'Indicator',
-        overlay: indicator.overlay === true,
-        precision: asNumber(indicator.precision),
-        shorttitle: asString(indicator.shorttitle),
-        format: asString(indicator.format),
+        title: asString(declared.title) ?? 'Indicator',
+        overlay: declared.overlay === true,
+        precision: asNumber(declared.precision),
+        shorttitle: asString(declared.shorttitle),
+        format: asString(declared.format),
     };
 
     const plotsObj = root.plots ?? {};
@@ -69,5 +77,39 @@ export function normalizeContext(ctx: unknown): PineRun {
         };
     });
 
-    return { meta, plots };
+    const trades = root.strategy ? normalizeTrades(root.strategy) : undefined;
+    return { meta, plots, ...(trades ? { trades } : {}) };
+}
+
+/**
+ * The ledger as-is: closed trades first, then the still-open ones. These arrays are
+ * STATE (the current ledger), not an event log — no cross-tick dedupe is needed, and a
+ * partial close legitimately leaves the same trade id in both lists (the closed lot and
+ * the open remainder). Malformed entries are dropped.
+ */
+function normalizeTrades(strategy: NonNullable<RawContext['strategy']>): PineTrade[] {
+    const out: PineTrade[] = [];
+    const closed = Array.isArray(strategy.closedtrades) ? strategy.closedtrades : [];
+    const open = Array.isArray(strategy.opentrades) ? strategy.opentrades : [];
+    for (const raw of [...closed, ...open]) {
+        const t = (raw ?? {}) as Record<string, unknown>;
+        const entry_price = asNumber(t.entry_price);
+        const entry_time = asNumber(t.entry_time);
+        const size = asNumber(t.size);
+        if (entry_price === undefined || entry_time === undefined || size === undefined || size === 0) continue;
+        out.push({
+            id: asString(t.id) ?? `trade_${out.length}`,
+            entry_id: asString(t.entry_id) ?? '',
+            entry_price,
+            entry_time,
+            entry_comment: asString(t.entry_comment),
+            exit_id: asString(t.exit_id),
+            exit_price: asNumber(t.exit_price),
+            exit_time: asNumber(t.exit_time),
+            exit_comment: asString(t.exit_comment),
+            size,
+            status: t.status === 'closed' ? 'closed' : 'open',
+        });
+    }
+    return out;
 }

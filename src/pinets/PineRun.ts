@@ -28,9 +28,30 @@ export interface PineRunMeta {
     format?: string;
 }
 
+/**
+ * One trade from the broker emulator's ledger (open or closed) — the narrow slice of
+ * PineTS's `Trade` this folder reads. `size` is SIGNED (positive = long); a closed
+ * trade carries its exit fill, an open one doesn't (yet).
+ */
+export interface PineTrade {
+    id: string;
+    entry_id: string;
+    entry_price: number;
+    entry_time: number;
+    entry_comment?: string;
+    exit_id?: string;
+    exit_price?: number;
+    exit_time?: number;
+    exit_comment?: string;
+    size: number;
+    status: 'open' | 'closed';
+}
+
 export interface PineRun {
     meta: PineRunMeta;
     plots: PinePlot[];
+    /** The strategy ledger (closed then open trades); absent for indicator scripts. */
+    trades?: PineTrade[];
 }
 
 export function asString(value: unknown): string | undefined {
