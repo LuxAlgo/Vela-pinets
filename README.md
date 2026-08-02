@@ -1,8 +1,11 @@
 # Vela-pinets
 
 The PineTS scripting engine for the [Vela](https://github.com/LuxAlgo/Vela) charting
-library — Pine Script indicators executed in-process (`PineEngine`) or off the main
-thread (`PineWorkerEngine`), plugged into Vela's public `ScriptingEngine` port.
+library — Pine Script indicators **and strategies** executed in-process (`PineEngine`) or
+off the main thread (`PineWorkerEngine`), plugged into Vela's public `ScriptingEngine`
+port. A `strategy()` script also emits its broker-emulator order fills as
+`IndicatorModel.trades` (one marker per fill, at the fill bar and price), which Vela
+paints as on-chart trade markers.
 
 ```ts
 import { Vela } from '@luxalgo/vela';
@@ -15,7 +18,10 @@ indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange)`);
 ```
 
-- **`PineEngine`** — in-process: the simplest setup; needs the `pinets` peer installed.
+- **`PineEngine`** — in-process: the simplest setup. `pinets` is a peer of the whole
+  package (`npm i @luxalgo/vela-pinets pinets`) — the published entry imports it
+  unconditionally, so it must resolve whichever engine you pick; the worker only avoids a
+  *second* copy by inlining its own at build time.
 - **`PineWorkerEngine`** — the same Pine semantics in a Web Worker (source inlined at
   build time, spawned from a Blob URL): heavy scripts never block the chart.
 - **Browser builds** — `vela-pinets.global.js` / `.global.min.js` expose
