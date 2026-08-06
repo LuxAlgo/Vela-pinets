@@ -18,10 +18,12 @@ indicator("EMA 20", overlay=true)
 plot(ta.ema(close, 20), color=color.orange)`);
 ```
 
-- **`PineEngine`** — in-process: the simplest setup. `pinets` is a peer of the whole
-  package (`npm i @luxalgo/vela-pinets pinets`) — the published entry imports it
-  unconditionally, so it must resolve whichever engine you pick; the worker only avoids a
-  *second* copy by inlining its own at build time.
+- **`PineEngine`** — in-process: the simplest setup. `@luxalgo/vela` and `pinets` are both
+  peers of the whole package (`npm i @luxalgo/vela-pinets @luxalgo/vela pinets`) — the
+  published entry imports both unconditionally, so each must resolve whichever engine you
+  pick. Vela is a peer rather than a dependency for the same reason the browser build maps
+  it onto `window.Vela`: a second copy would duplicate the SDK registries, not just the
+  bytes. The worker avoids a second *pinets* by inlining its own at build time.
 - **`PineWorkerEngine`** — the same Pine semantics in a Web Worker (source inlined at
   build time, spawned from a Blob URL): heavy scripts never block the chart.
 - **Browser builds** — `vela-pinets.global.js` / `.global.min.js` expose
