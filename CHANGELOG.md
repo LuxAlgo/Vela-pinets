@@ -2,6 +2,23 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.3]
+
+### Fixed
+
+- **`input.source()` works again — from the settings dialog and from defaults.** pinets
+  0.9.31 (now the minimum peer) resolves a runtime source override — which crosses the
+  host/worker boundary as the series NAME (`'hlc3'`) — to the named series' per-bar value
+  instead of handing the raw string to the script. Through this addon every `input.source`
+  script was broken **on add**: Vela echoes input defaults back as overrides on start, so
+  even the untouched `"close"` default reached the script as a string and every derived
+  computation was `NaN`. No code change in this package — this release exists to re-freeze
+  the fixed pinets into the dist, because the inlined worker bundles its **own** pinets at
+  build time: npm-updating pinets in a host application never reaches `PineWorkerEngine`
+  (nor the browser-global builds). The peer floor rises `>=0.9.29` → `>=0.9.31` so a
+  resolvable-but-broken pinets can no longer satisfy the range; `PineEngine` (in-process,
+  pinets external) picks the fix up from the host's own install as usual.
+
 ## [v0.2.0]
 
 ### Added
