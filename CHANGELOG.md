@@ -11,9 +11,9 @@ All notable changes to Vela-pinets, newest first.
   `bgcolor()` carry the flag into the model, so a script in its own pane can pin
   those elements to the price pane — the drawing objects (`line.new`, `label.new`,
   `box.new`, `polyline.new`, `linefill.new`) already did, and `table.new` joins
-  them. A `fill()` follows its two plots: when both are forced to the price pane,
-  the band renders there too (PineTS records no flag for `fill()` itself, so a
-  fill cannot be forced independently of its anchors).
+  them. A `fill()` follows its two plots, as in Pine (where the function has no
+  flag of its own and rejects plots with mixed flags): when both are forced to
+  the price pane, the band renders there too.
 
 ## [v0.2.3]
 

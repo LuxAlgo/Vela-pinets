@@ -5,7 +5,8 @@ import type { OHLCV, IndicatorModel } from '@luxalgo/vela/plugin';
 /**
  * `force_overlay=true` mapping, end to end through real PineTS: every function that
  * records the flag must produce a model item with `overlay: true`, so Vela routes it
- * to the price pane. A fill() follows its anchors (PineTS records no flag for it).
+ * to the price pane. A fill() has no flag of its own in Pine (mixed-flag plots are a
+ * compile error, CE10030) — it follows its anchor plots.
  */
 
 const DRAWINGS_SOURCE = `//@version=6
@@ -94,7 +95,7 @@ describe('force_overlay mapping (real PineTS run)', () => {
         expect(model.backgrounds.length).toBeGreaterThan(0);
         expect(model.backgrounds.every((b) => b.overlay === true)).toBe(true);
 
-        // fill(): PineTS records no flag — it follows its anchors (both forced ⇒ overlay).
+        // fill(): no flag of its own in Pine — it follows its anchors (both forced ⇒ overlay).
         expect(model.fills.find((f) => f.id.includes('fill_fo'))?.overlay).toBe(true);
         expect(model.fills.find((f) => f.id.includes('fill_own'))?.overlay).toBeUndefined();
 

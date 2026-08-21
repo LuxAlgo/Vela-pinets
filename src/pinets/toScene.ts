@@ -107,10 +107,10 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
             warnings.push(`fill "${fill.key}" references unknown plots (${fill.plot1 ?? '?'}/${fill.plot2 ?? '?'})`);
             continue;
         }
-        // A fill follows its anchors: both plots forced to the price pane ⇒ the band
-        // renders there too. (PineTS does not record fill()'s own force_overlay today;
-        // the direct check is honored anyway should a future PineTS emit it.)
-        const overlay = fill.options.force_overlay === true || (overlayKeys.has(fill.plot1!) && overlayKeys.has(fill.plot2!));
+        // Pine's fill() has no force_overlay of its own and rejects plots with mixed
+        // flags at compile time (CE10030) — a fill simply follows its anchor plots:
+        // both forced to the price pane ⇒ the band renders there too.
+        const overlay = overlayKeys.has(fill.plot1!) && overlayKeys.has(fill.plot2!);
         fills.push({
             id: ids.next(instanceId, 'fill', fill.title ?? fill.key),
             paneId: 'unrouted',
