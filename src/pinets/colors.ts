@@ -20,3 +20,10 @@ export function isVisibleColor(color: unknown): color is string {
 export function normColor(color: unknown, fallback?: string): string | undefined {
     return isVisibleColor(color) ? color.trim() : fallback;
 }
+
+/**
+ * Fully transparent per-point override, emitted for bars whose evaluated Pine
+ * color is `na`: the renderer draws nothing for that bar's segment while the
+ * point itself survives (fills keep their anchor, values stay readable).
+ */
+export const INVISIBLE_COLOR = '#00000000';

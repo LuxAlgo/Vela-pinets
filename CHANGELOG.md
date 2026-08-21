@@ -2,6 +2,19 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **`na` and `color(na)` act as invisible colors.** A `plot()` whose color
+  evaluates to `na` on some bars painted those segments in the series' fallback
+  color; they are now invisible while the plotted value survives (fills keep
+  their anchors and the value stays readable). A `plotshape()` / `plotchar()`
+  marker whose color evaluates to `na` draws nothing on that bar. And a label
+  with `color = na` keeps its declared style's placement — the bubble is simply
+  not painted (pairs with the matching Vela renderer fix for the placement
+  itself).
+
 ## [v0.2.3]
 
 ### Fixed

@@ -7,7 +7,7 @@ import type { TradeExecution } from '@luxalgo/vela/plugin';
 import type { PineRun, PinePlot, PineTrade } from './PineRun';
 import { asString, asNumber } from './PineRun';
 import { classifyStyle } from './styleMap';
-import { normColor } from './colors';
+import { normColor, isVisibleColor, INVISIBLE_COLOR } from './colors';
 import { IdentityMap } from './identityMap';
 import { toLines, toBoxes, toLabels, toPolylines, toLinefills, toTables } from './drawings';
 import { ACCENT } from '@luxalgo/vela/plugin';
@@ -236,10 +236,17 @@ function toCandleBarColors(plot: PinePlot): Array<CandleBarColor | null> | undef
 }
 
 function toPoints(plot: PinePlot): SeriesPoint[] {
+    // PineTS stamps each bar's EVALUATED color into the point options and leaves
+    // it out (or NaN) where it evaluated to `na`. On a plot that otherwise
+    // carries per-bar colors, such a bar means "don't draw this segment" — emit
+    // a transparent override so the point survives (fills still anchor to it)
+    // but nothing is painted. A plot with no per-bar colors at all is untouched.
+    const hasPerBarColor = plot.data.some((d) => isVisibleColor(d.options?.color));
     return plot.data.map((d) => {
         const value = typeof d.value === 'number' && Number.isFinite(d.value) ? d.value : null;
         const color = normColor(d.options?.color);
-        return color ? { time: d.time, value, color } : { time: d.time, value };
+        if (color) return { time: d.time, value, color };
+        return hasPerBarColor ? { time: d.time, value, color: INVISIBLE_COLOR } : { time: d.time, value };
     });
 }
 
@@ -386,6 +393,11 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
         const isNum = typeof v === 'number' && Number.isFinite(v);
         if (v !== true && !isNum) continue; // only bars where the shape shows
         const opts = d.options ?? plot.options;
+        // PineTS stamps the bar's EVALUATED color: `undefined` means no color
+        // argument (default applies), while `na` arrives as NaN/null/an na
+        // object — an evaluated-but-invisible color draws no shape on this bar.
+        const rawColor = opts.color !== undefined ? opts.color : plot.options.color;
+        if (rawColor !== undefined && !isVisibleColor(rawColor)) continue;
         const text = asString(opts.text) ?? asString(plot.options.text);
         out.push({
             id: ids.next(instanceId, 'label', `${plot.key}#${out.length}`),
