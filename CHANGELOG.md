@@ -6,6 +6,19 @@ All notable changes to Vela-pinets, newest first.
 
 ### Fixed
 
+- **Plot arguments render with Pine's semantics.** `display` now controls pane
+  visibility across the plotting functions: a plot declared
+  `display.status_line`, `display.price_scale`, or `display.data_window` stays
+  off the chart (previously the first two still painted), and `display.none` is
+  honored by `hline()`, `fill()`, `plotshape()`/`plotchar()`, `bgcolor()`, and
+  `barcolor()` too. `trackprice = true` extends the plot's latest value across
+  the pane as a dotted level line — including the level-only idiom with
+  `display.none`. `show_last = N` draws only the last N bars of a plot (lines,
+  histograms, shapes, candles, backgrounds, and bar colors alike). `histbase`
+  re-bases `style_histogram` / `style_columns` / `style_area` plots instead of
+  always growing from zero. An `hline()` without a `linestyle` defaults to
+  dashed (and an explicit `hline.style_solid` stays solid), and a plain
+  `plot()` defaults to line width 1, both as Pine defines them.
 - **`na` and `color(na)` act as invisible colors.** A `plot()` whose color
   evaluates to `na` on some bars painted those segments in the series' fallback
   color; they are now invisible while the plotted value survives (fills keep
