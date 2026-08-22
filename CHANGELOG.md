@@ -6,6 +6,27 @@ All notable changes to Vela-pinets, newest first.
 
 ### Fixed
 
+- **Untitled markers no longer collapse into one plot.** PineTS keys a plot by
+  title and its transpiler injects no callsite ids, so every untitled
+  `plotshape()` / `plotchar()` / `plotarrow()` call landed on the same plot — a
+  script with twelve untitled plotshapes painted only the last one, and a
+  non-first call's `display` / `show_last` were silently governed by the first
+  call. The engines now synthesize the callsite ids pinets' key resolution
+  already understands (the call's stable position in the per-bar marker
+  sequence), so each call keeps its own plot and its own plot-level options —
+  `display.none` on any one call hides exactly that call. Two callsites reusing
+  one title stay separate plots too.
+- **`plotchar()` draws its character.** The `char` argument was ignored and the
+  marker rendered as a circle; the character is now the marker itself (a
+  text-only label painted in `color`, the `★` default when omitted), with the
+  `text` argument rendered under it.
+- **`plotarrow()` renders with Pine's semantics.** Up/down arrows default to the
+  semantic bullish/bearish palette instead of the accent color (explicit
+  `colorup` / `colordown` still win), arrow sizes scale with the bar's |value|
+  inside the `minheight`…`maxheight` pixel window (largest |value| = maxheight,
+  TV defaults 5…100) instead of one fixed size, and `0` / `na` bars draw no
+  arrow instead of a stray default-shaped marker.
+
 - **Tables carry their full Pine styling to the chart.** Cell `width`/`height`
   percentages and an integer pixel `text_size` now reach the renderer instead of
   being dropped or rounded to the nearest named size. `text_formatting` works on
