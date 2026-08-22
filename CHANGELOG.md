@@ -6,6 +6,14 @@ All notable changes to Vela-pinets, newest first.
 
 ### Fixed
 
+- **Labels carry their full Pine text styling to the chart.** `text_formatting`
+  works on labels: a `label.new(text_formatting = …)` argument sets bold/italic
+  (pinets had nowhere to store it, so the styling was lost — or the script died
+  on the unknown argument), and the `label.set_text_formatting` /
+  `label.set_text_font_family` setters exist now instead of crashing the script
+  ("not a function"). Together with the renderer honoring `textalign` inside
+  label bubbles and showing `tooltip` on hover (see the Vela changelog), the
+  label text options now behave as written.
 - **Untitled markers no longer collapse into one plot.** PineTS keys a plot by
   title and its transpiler injects no callsite ids, so every untitled
   `plotshape()` / `plotchar()` / `plotarrow()` call landed on the same plot — a
