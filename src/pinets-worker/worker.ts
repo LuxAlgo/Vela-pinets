@@ -31,6 +31,7 @@ interface Session {
     market: ExecutionMarket;
     bars: OHLCV[];
     inputs: Record<string, InputValue>;
+    props: Record<string, InputValue>;
     visibleRange?: VisibleBarRange;
     cache: IndicatorCache;
     stopped: boolean;
@@ -102,6 +103,7 @@ function startStream(s: Session): void {
         cache: s.cache,
         prepared: s.prepared,
         inputs: s.inputs,
+        props: s.props,
         bars: () => s.bars,
         market: () => s.market,
         fetchSeries,
@@ -120,13 +122,14 @@ async function runSession(s: Session): Promise<void> {
     try {
         const token = s.prepared.token as PineToken;
         const outcome = await runPineStatic({
-            ind: indicatorFor(s.cache, token.source, s.inputs),
+            ind: indicatorFor(s.cache, token.source, s.inputs, s.props),
             bars: s.bars,
             market: s.market,
             visibleRange: s.visibleRange,
             prepared: s.prepared,
             instanceId: token.instanceId,
             inputs: s.inputs,
+            props: s.props,
             fetchSeries,
         });
         if (s.stopped) return;
@@ -146,7 +149,7 @@ ctx.addEventListener('message', (event) => {
     switch (msg.kind) {
         case 'prepare':
             try {
-                post({ kind: 'prepared', reqId: msg.reqId, prepared: preparePine(msg.source, msg.instanceId) });
+                post({ kind: 'prepared', reqId: msg.reqId, prepared: preparePine(msg.source, msg.instanceId, msg.defaultProps, msg.propsVisibility) });
             } catch (err) {
                 post({ kind: 'prepared', reqId: msg.reqId, error: err instanceof Error ? err.message : String(err) });
             }
@@ -159,6 +162,7 @@ ctx.addEventListener('message', (event) => {
                 market: msg.market,
                 bars: msg.bars,
                 inputs: msg.inputs,
+                props: msg.props ?? {},
                 visibleRange: msg.visibleRange,
                 cache: {},
                 stopped: false,
@@ -180,8 +184,9 @@ ctx.addEventListener('message', (event) => {
             const s = sessions.get(msg.sessionId);
             if (!s) return;
             s.inputs = { ...s.inputs, ...msg.inputs };
+            if (msg.props) s.props = { ...s.props, ...msg.props };
             if (s.mode === 'live') {
-                if (!s.deferred) startStream(s); // re-stream with the merged inputs baked in
+                if (!s.deferred) startStream(s); // re-stream with the merged inputs/props baked in
                 return;
             }
             if (s.deferred) post({ kind: 'done', sessionId: s.id }); // merged; the deferred first run picks it up

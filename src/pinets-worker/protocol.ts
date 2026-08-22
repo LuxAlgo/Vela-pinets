@@ -3,6 +3,7 @@ import type { InputValue } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import type { BarRange } from '@luxalgo/vela/plugin';
 import type { PreparedScript, ExecutionMarket, VisibleBarRange, EngineAlert, EngineWarning, ContextSelect, EngineContextSnapshot } from '@luxalgo/vela/plugin';
+import type { PropsVisibility } from '../pinets/runtime';
 
 /**
  * The message protocol between `PineWorkerEngine` (main thread) and `worker.ts`
@@ -16,9 +17,9 @@ import type { PreparedScript, ExecutionMarket, VisibleBarRange, EngineAlert, Eng
  */
 
 export type MainToWorker =
-    | { kind: 'prepare'; reqId: number; source: string; instanceId: string }
-    | { kind: 'execute'; sessionId: number; prepared: PreparedScript; market: ExecutionMarket; bars: OHLCV[]; inputs: Record<string, InputValue>; visibleRange?: VisibleBarRange; mode?: 'static' | 'live'; historyState?: 'backfill' | 'complete' }
-    | { kind: 'update'; sessionId: number; inputs: Record<string, InputValue> }
+    | { kind: 'prepare'; reqId: number; source: string; instanceId: string; defaultProps?: Record<string, InputValue>; propsVisibility?: PropsVisibility }
+    | { kind: 'execute'; sessionId: number; prepared: PreparedScript; market: ExecutionMarket; bars: OHLCV[]; inputs: Record<string, InputValue>; props?: Record<string, InputValue>; visibleRange?: VisibleBarRange; mode?: 'static' | 'live'; historyState?: 'backfill' | 'complete' }
+    | { kind: 'update'; sessionId: number; inputs: Record<string, InputValue>; props?: Record<string, InputValue> }
     | { kind: 'setVisibleRange'; sessionId: number; range: VisibleBarRange }
     | { kind: 'notifyBars'; sessionId: number; bars: OHLCV[] }
     /**

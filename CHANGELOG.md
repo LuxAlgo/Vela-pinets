@@ -2,6 +2,31 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Declaration props end to end.** Both engines now expose the mutable
+  `indicator()` / `strategy()` declaration arguments (a strategy's
+  `initial_capital`, `commission_value`, an indicator's `precision`, …) through
+  Vela's new props channel: `prepare` publishes a props schema whose defaults are
+  the *effective* values (source-declared ← engine default ← Pine spec),
+  `capabilities.props` announces it, and prop overrides — add-time
+  (`addIndicator({ props })`), live (`handle.setProps`), or edited on the settings
+  dialog's new **Properties** tab — are applied via the PineTS `.prop` channel and
+  replay the script. Requires `@luxalgo/vela` with props support in the
+  `ScriptingEngine` port.
+- **`props` visibility engine option** (`PineEngine` and `PineWorkerEngine`):
+  which scripts publish the declaration-props schema — `'all'` (default), `'strategy'`
+  (only `strategy()` scripts get a Properties tab, the TradingView-style split), or
+  `'none'`. Presentation-only: hidden props keep their source/spec values and
+  programmatic `setProps` still applies.
+- **`defaultProps` engine option** (`PineEngine` and `PineWorkerEngine`):
+  host-level defaults for declaration props, applied beneath source-declared
+  values — a script that declares the prop keeps its own value; one that omits it
+  gets the host default instead of the Pine spec one. Folded into the schema's
+  defaults, so the dialog opens on them and "Reset defaults" restores them.
+
 ## [v0.2.3]
 
 ### Fixed

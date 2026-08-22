@@ -26,6 +26,14 @@ plot(ta.ema(close, 20), color=color.orange)`);
   bytes. The worker avoids a second *pinets* by inlining its own at build time.
 - **`PineWorkerEngine`** — the same Pine semantics in a Web Worker (source inlined at
   build time, spawned from a Blob URL): heavy scripts never block the chart.
+- **Declaration props** — both engines publish the mutable `indicator()` / `strategy()`
+  declaration arguments (`initial_capital`, `precision`, …) as a props schema: Vela shows
+  them on the settings dialog's **Properties** tab, and hosts override them via
+  `addIndicator({ props })` / `handle.setProps()`. The optional `defaultProps` engine
+  option (`new PineEngine({ defaultProps: { initial_capital: 50000 } })`) sets host-level
+  defaults for scripts that don't declare the prop themselves, and `props: 'all' |
+  'strategy' | 'none'` gates which scripts publish the schema at all (`'strategy'`
+  reproduces the TradingView split: a Properties tab for strategies only).
 - **Browser builds** — `vela-pinets.global.js` / `.global.min.js` expose
   `window.VelaPinets` for script-tag usage; load `vela.global.js` first.
 

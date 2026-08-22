@@ -9,7 +9,9 @@ import type {
 } from '@luxalgo/vela/plugin';
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { BarRange } from '@luxalgo/vela/plugin';
+import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
+import type { PropsVisibility } from '../pinets/runtime';
 import workerCode from 'inline-worker:./worker.ts';
 
 export interface PineWorkerOptions {
@@ -21,6 +23,21 @@ export interface PineWorkerOptions {
     workerUrl?: string;
     /** Worker factory — tests inject a fake; defaults to the inlined Blob worker. */
     createWorker?: () => WorkerLike;
+    /**
+     * Host-level defaults for declaration props (`initial_capital`, `precision`, …),
+     * applied BENEATH source-declared values: a script that declares the prop keeps
+     * its own value; a script that omits it gets the host's default instead of the
+     * Pine spec one. Folded into the props schema's `defval`s at prepare, so the
+     * settings dialog opens on them and "Reset defaults" restores them.
+     */
+    defaultProps?: Record<string, InputValue>;
+    /**
+     * Which scripts publish the declaration-props schema (drives whether the
+     * settings dialog shows a "Properties" tab): `'all'` (default) every script,
+     * `'strategy'` only `strategy()` scripts, `'none'` no script. Presentation-only:
+     * hidden props keep their source/spec values, and `setProps` still applies.
+     */
+    props?: PropsVisibility;
 }
 
 /**
@@ -64,10 +81,12 @@ interface SessionEntry {
  */
 export class PineWorkerEngine implements ScriptingEngine {
     readonly language = 'pine';
-    readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true };
+    readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true, props: true };
 
     private worker: WorkerLike | null = null;
     private readonly spawn: () => WorkerLike;
+    private readonly defaultProps: Record<string, InputValue> | undefined;
+    private readonly propsVisibility: PropsVisibility | undefined;
     private readonly prepares = new Map<number, { resolve: (p: PreparedScript) => void; reject: (e: Error) => void }>();
     private readonly sessions = new Map<number, SessionEntry>();
     private reqId = 0;
@@ -76,13 +95,22 @@ export class PineWorkerEngine implements ScriptingEngine {
 
     constructor(opts: PineWorkerOptions = {}) {
         this.spawn = opts.createWorker ?? ((): WorkerLike => spawnWorker(opts.workerUrl));
+        this.defaultProps = opts.defaultProps;
+        this.propsVisibility = opts.props;
     }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
         const reqId = ++this.reqId;
         return new Promise<PreparedScript>((resolve, reject) => {
             this.prepares.set(reqId, { resolve, reject });
-            this.post({ kind: 'prepare', reqId, source, instanceId });
+            this.post({
+                kind: 'prepare',
+                reqId,
+                source,
+                instanceId,
+                ...(this.defaultProps ? { defaultProps: this.defaultProps } : {}),
+                ...(this.propsVisibility ? { propsVisibility: this.propsVisibility } : {}),
+            });
         });
     }
 
@@ -99,6 +127,7 @@ export class PineWorkerEngine implements ScriptingEngine {
             market: req.market,
             bars,
             inputs: { ...(req.inputs ?? {}) },
+            ...(req.props ? { props: { ...req.props } } : {}),
             visibleRange: req.visibleRange,
             mode,
             historyState: req.historyState,
@@ -117,9 +146,10 @@ export class PineWorkerEngine implements ScriptingEngine {
                 this.post({ kind: 'stop', sessionId });
                 this.sessions.delete(sessionId);
             },
-            update: (inputs) => {
-                if (mode === 'live') this.post({ kind: 'update', sessionId, inputs });
-                else this.postRun(entry, { kind: 'update', sessionId, inputs });
+            update: (inputs, props) => {
+                const msg: MainToWorker = { kind: 'update', sessionId, inputs, ...(props ? { props } : {}) };
+                if (mode === 'live') this.post(msg);
+                else this.postRun(entry, msg);
             },
             setVisibleRange: (range) => {
                 if (mode === 'live') this.post({ kind: 'setVisibleRange', sessionId, range });
