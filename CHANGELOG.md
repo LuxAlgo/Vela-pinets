@@ -2,6 +2,20 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **A strategy's backtest properties are editable from the chart.** The indicator
+  settings dialog of a `strategy()` script gains a **Properties** tab alongside its
+  inputs: initial capital, base currency, default order size (value and type),
+  pyramiding, commission (value and type), slippage, and the long/short margin
+  percentages. Values start from what the script declares in its `strategy()` call
+  (Reset defaults restores exactly those), and every edit re-runs the broker emulator
+  with the new configuration — equity, P&L, and the painted trades update like any
+  input change. A strategy that declares no `input.*()` now opens a settings dialog
+  too. Both engine forms behave identically.
+
 ## [v0.2.3]
 
 ### Fixed

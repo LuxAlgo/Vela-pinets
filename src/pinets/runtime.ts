@@ -13,6 +13,7 @@ import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import { normalizeContext } from './normalizeContext';
 import { toScene } from './toScene';
 import { mapInputs } from './inputsMeta';
+import { strategyPropInputs, splitStrategyProps, applyStrategyProps } from './strategyProps';
 
 /**
  * The transport-agnostic PineTS runtime: parse a script, run it once over bars,
@@ -47,7 +48,10 @@ export interface PineToken {
 
 /** Parse a Pine source: inputs schema + declaration metadata + viewport-dependence. No market data. */
 export function preparePine(source: string, instanceId: string): PreparedScript {
-    const inputs = mapInputs(Indicator.from(source).getInputsMeta());
+    const ind = Indicator.from(source);
+    // Script inputs first, then — for a strategy() — its declaration properties as
+    // namespaced rows on the "Properties" tab (see strategyProps.ts).
+    const inputs = [...mapInputs(ind.getInputsMeta()), ...strategyPropInputs(ind)];
     const overlay = /overlay\s*[:=]\s*true/.test(source);
     // strategy() declares exactly like indicator() — without the alternative, every
     // strategy script showed a placeholder "Indicator" legend title until its first run.
@@ -66,7 +70,14 @@ export function preparePine(source: string, instanceId: string): PreparedScript 
 export function indicatorFor(cache: IndicatorCache, source: string, inputs: Record<string, InputValue>): InstanceType<typeof Indicator> {
     const key = JSON.stringify(inputs);
     if (cache.lastKey !== key || !cache.lastInd) {
-        cache.lastInd = new Indicator(source, inputs);
+        // Namespaced `strategy.*` keys are declaration-property overrides, not script
+        // inputs: they go through the instance's `.prop` view, which pine.run() merges
+        // on top of the source-declared strategy() args. The cache key spans BOTH kinds,
+        // so a Properties edit rebuilds the instance like any input edit.
+        const { scriptInputs, propOverrides } = splitStrategyProps(inputs);
+        const ind = new Indicator(source, scriptInputs);
+        applyStrategyProps(ind, propOverrides);
+        cache.lastInd = ind;
         cache.lastKey = key;
     }
     return cache.lastInd;
