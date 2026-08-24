@@ -10,7 +10,7 @@ import { classifyStyle } from './styleMap';
 import { normColor, isVisibleColor, INVISIBLE_COLOR } from './colors';
 import { IdentityMap } from './identityMap';
 import { toLines, toBoxes, toLabels, toPolylines, toLinefills, toTables } from './drawings';
-import { ACCENT } from '@luxalgo/vela/plugin';
+import { ACCENT, BULLISH, BEARISH } from '@luxalgo/vela/plugin';
 
 const DEFAULT_COLOR = ACCENT;
 
@@ -464,11 +464,27 @@ function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: I
  * `plotshape`/`plotchar`/`plotarrow` → labels. Each rendered bar (where the
  * series is `true` or a finite number) becomes a label whose style is the Pine
  * `shape.*` and whose anchor follows `location` (absolute price, pane top/bottom,
- * or above/below the bar).
+ * or above/below the bar). The three functions share pinets' `shape`/`char`
+ * plot styles, so the variants are told apart here:
+ *  - `plotchar` (style `char`) draws its CHARACTER as a text-only label — the
+ *    glyph is the marker, painted in `color` (`textcolor` styles the `text`
+ *    line under it; one label carries one text color, so an explicit
+ *    `textcolor` wins when both render);
+ *  - `plotarrow` (style `shape` with per-point `shape_arrow_up/down` + `height`
+ *    and NO plot-level `shape`) colors up/down arrows with the semantic
+ *    bullish/bearish palette when no `colorup`/`colordown` was given, sizes
+ *    them proportionally to |value| within the `minheight`…`maxheight` pixel
+ *    window (largest |value| = maxheight, TV defaults 5…100), and draws
+ *    NOTHING on `0`/`na` bars.
  */
 function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): DrawingLabel[] {
     const offset = asNumber(plot.options.offset);
     const shift = offset ? offset * inferIntervalMs(plot.data) : 0;
+    const isChar = plot.style === 'char' || plot.options.char !== undefined;
+    // plotarrow never sets a plot-level `shape` (plotshape ALWAYS stamps the key,
+    // even for its default style); its points carry the pixel-height carryover.
+    const isArrow = !isChar && !('shape' in plot.options) && plot.data.some((d) => d.options !== undefined && 'height' in d.options);
+    const arrowScale = isArrow ? arrowScaleOf(plot) : null;
     // plotshape/plotchar/plotarrow record force_overlay at the plot level.
     const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     const out: DrawingLabel[] = [];
@@ -478,6 +494,7 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
         const v = d.value;
         const isNum = typeof v === 'number' && Number.isFinite(v);
         if (v !== true && !isNum) continue; // only bars where the shape shows
+        if (isArrow && (!isNum || v === 0)) continue; // plotarrow: 0/na draws no arrow
         const opts = d.options ?? plot.options;
         // PineTS stamps the bar's EVALUATED color: `undefined` means no color
         // argument (default applies), while `na` arrives as NaN/null/an na
@@ -485,6 +502,10 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
         const rawColor = opts.color !== undefined ? opts.color : plot.options.color;
         if (rawColor !== undefined && !isVisibleColor(rawColor)) continue;
         const text = asString(opts.text) ?? asString(plot.options.text);
+        const trimmed = text && text.trim().length > 0 ? text : undefined;
+        const arrowDefault = isArrow ? (isNum && v > 0 ? BULLISH : BEARISH) : undefined;
+        const color = normColor(opts.color) ?? normColor(plot.options.color) ?? arrowDefault ?? DEFAULT_COLOR;
+        const char = isChar ? (asString(opts.char) ?? asString(plot.options.char) ?? '★') : undefined;
         out.push({
             id: ids.next(instanceId, 'label', `${plot.key}#${out.length}`),
             paneId: 'unrouted',
@@ -492,17 +513,49 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             x: d.time + shift,
             y: isNum ? v : 0, // bool (e.g. squeeze) at location.absolute → the zero line
             yloc: markerYLoc(asString(opts.location) ?? asString(plot.options.location)),
-            text: text && text.trim().length > 0 ? text : undefined,
-            style: markerShape(asString(opts.shape) ?? asString(plot.options.shape)),
-            color: normColor(opts.color) ?? normColor(plot.options.color) ?? DEFAULT_COLOR,
-            textColor: normColor(opts.textcolor) ?? normColor(plot.options.textcolor),
-            size: markerSize(asString(opts.size) ?? asString(plot.options.size)),
+            // A char glyph is the marker itself: text-only label, `text` under it.
+            text: char !== undefined ? (trimmed !== undefined ? `${char}\n${trimmed}` : char) : trimmed,
+            style: char !== undefined ? 'none' : markerShape(asString(opts.shape) ?? asString(plot.options.shape)),
+            color,
+            textColor: normColor(opts.textcolor) ?? normColor(plot.options.textcolor) ?? (char !== undefined ? color : undefined),
+            size: arrowScale !== null && isNum ? arrowSize(Math.abs(v), arrowScale) : markerSize(asString(opts.size) ?? asString(plot.options.size)),
             textAlign: 'center',
             fontFamily: 'default',
             ...overlay,
         });
     }
     return out;
+}
+
+interface ArrowScale {
+    maxAbs: number;
+    minH: number;
+    maxH: number;
+}
+
+/** The plot's |value| ceiling plus its pixel-height window (TV defaults 5…100). */
+function arrowScaleOf(plot: PinePlot): ArrowScale {
+    let maxAbs = 0;
+    for (const d of plot.data) {
+        if (typeof d.value === 'number' && Number.isFinite(d.value)) maxAbs = Math.max(maxAbs, Math.abs(d.value));
+    }
+    return { maxAbs, minH: asNumber(plot.options.minheight) ?? 5, maxH: asNumber(plot.options.maxheight) ?? 100 };
+}
+
+/**
+ * A plotarrow's proportional pixel height, bucketed into the label sizes. The
+ * largest |value| of the plot draws at `maxheight`, the rest scale linearly down
+ * to `minheight` — the buckets spread the default 5…100 px window across all
+ * five sizes.
+ */
+function arrowSize(abs: number, scale: ArrowScale): DrawingLabel['size'] {
+    const t = scale.maxAbs > 0 ? abs / scale.maxAbs : 1;
+    const px = scale.minH + t * (scale.maxH - scale.minH);
+    if (px <= 12) return 'tiny';
+    if (px <= 24) return 'small';
+    if (px <= 44) return 'normal';
+    if (px <= 72) return 'large';
+    return 'huge';
 }
 
 function markerYLoc(location: string | undefined): DrawingLabel['yloc'] {

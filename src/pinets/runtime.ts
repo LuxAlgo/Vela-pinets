@@ -15,6 +15,7 @@ import { toScene } from './toScene';
 import { mapInputs } from './inputsMeta';
 import { mapProps, applyProps } from './propsMeta';
 import { ensurePineTablePatch } from './tablePatch';
+import { ensurePineMarkerPatch } from './markerPatch';
 
 /**
  * The transport-agnostic PineTS runtime: parse a script, run it once over bars,
@@ -123,6 +124,7 @@ export async function runPineStatic(opts: {
 }): Promise<PineRunResult> {
     const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries } = opts;
     ensurePineTablePatch();
+    ensurePineMarkerPatch();
     const klines = toKlines(bars);
     // The virtual provider: serve the chart's own series in-memory (the bars Vela
     // owns), but route any OTHER (symbol, timeframe) — i.e. request.security HTF/LTF/
@@ -287,6 +289,7 @@ export function openLiveStream(opts: {
 }): LiveStreamHandle {
     const bars = opts.bars();
     ensurePineTablePatch();
+    ensurePineMarkerPatch();    
     const ind = indicatorFor(opts.cache, opts.token.source, opts.inputs, opts.props ?? {});
     const anchorTime = bars[0]?.time;
     // pageSize = full length: the initial drain must emit ONE complete model (a smaller
