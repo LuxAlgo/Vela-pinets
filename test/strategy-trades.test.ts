@@ -304,6 +304,41 @@ describe('a strategy through the addon engine driving the built Vela', () => {
         expect(chart.inspect().totals.trades).toBe(trades.length);
     }, 30_000);
 
+    it('declaration props reach the backtest: add-time override, then a live setProps re-run', async () => {
+        const renderer = new RecordingRenderer();
+        const chart = new Vela(
+            {} as unknown as HTMLElement,
+            { symbol: 'TEST', timeframe: '60', live: false, volume: false },
+            { renderer, engines: [new PineEngine()], dataFeed: new FixedFeed() },
+        );
+        const errors: string[] = [];
+        chart.on('indicator:error', (e) => errors.push(e.error.message));
+        const h = chart.addIndicator(STRATEGY, { props: { initial_capital: 5000 } });
+        await chart.ready();
+        await waitFor(() => (renderer.lastTrades(h.id)?.length ?? 0) > 0 || errors.length > 0);
+        expect(errors).toEqual([]);
+
+        // The props schema reached the handle (strategy schema, source/spec defaults resolved).
+        expect(h.props.find((p) => p.key === 'initial_capital')).toBeDefined();
+
+        // The add-time override reached the broker emulator.
+        let snap = await h.context(['strategy']);
+        expect(snap?.strategy?.initialCapital).toBe(5000);
+
+        // A live setProps replays the whole backtest with the new capital — poll the
+        // context until the async re-run lands.
+        h.setProp('initial_capital', 7777);
+        const deadline = Date.now() + 20_000;
+        for (;;) {
+            snap = await h.context(['strategy']);
+            if (snap?.strategy?.initialCapital === 7777 || Date.now() > deadline) break;
+            await new Promise((r) => setTimeout(r, 50));
+        }
+        expect(errors).toEqual([]);
+        expect(snap?.strategy?.initialCapital).toBe(7777);
+        chart.destroy();
+    }, 30_000);
+
     it('a reversal strategy paints ONE merged entry per flip, never a separate exit', async () => {
         const renderer = new RecordingRenderer();
         const chart = new Vela(
