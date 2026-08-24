@@ -17,10 +17,32 @@ import {
     type LiveStreamHandle,
     type IndicatorCache,
     type PineToken,
+    type PropsFilter,
 } from './runtime';
 
 /** The prepared token plus the in-process Indicator cache (reused across re-runs/ticks). */
 type PineSession = PineToken & IndicatorCache;
+
+/** Options for {@link PineEngine}. */
+export interface PineEngineOptions {
+    /**
+     * Host-level defaults for declaration props (`initial_capital`, `precision`, …),
+     * applied BENEATH source-declared values: a script that declares the prop keeps
+     * its own value; a script that omits it gets the host's default instead of the
+     * Pine spec one. Folded into the props schema's `defval`s at prepare, so the
+     * settings dialog opens on them and "Reset defaults" restores them.
+     */
+    defaultProps?: Record<string, InputValue>;
+    /**
+     * Which scripts publish the declaration-props schema (drives whether the
+     * settings dialog shows a "Properties" tab): `'all'` (default) every script,
+     * `'strategy'` only `strategy()` scripts, `'none'` no script — or an explicit
+     * WHITELIST of prop keys, published in the list's order (a script owning none
+     * of the listed keys gets no tab). Presentation-only: hidden props keep their
+     * source/spec values, and `setProps` still applies.
+     */
+    props?: PropsFilter;
+}
 
 /**
  * The in-process PineTS implementation of `ScriptingEngine`. Both the static run
@@ -31,16 +53,24 @@ type PineSession = PineToken & IndicatorCache;
  */
 export class PineEngine implements ScriptingEngine {
     readonly language = 'pine';
-    readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true };
+    readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true, props: true };
+    private readonly defaultProps: Record<string, InputValue> | undefined;
+    private readonly propsVisibility: PropsFilter;
+
+    constructor(opts: PineEngineOptions = {}) {
+        this.defaultProps = opts.defaultProps;
+        this.propsVisibility = opts.props ?? 'all';
+    }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
-        return Promise.resolve(preparePine(source, instanceId));
+        return Promise.resolve(preparePine(source, instanceId, this.defaultProps, this.propsVisibility));
     }
 
     execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
         const token = req.prepared.token as PineSession;
         const getBars = req.getBars ?? ((): OHLCV[] => req.bars);
         let inputs: Record<string, InputValue> = { ...(req.inputs ?? {}) };
+        let props: Record<string, InputValue> = { ...(req.props ?? {}) };
         let visibleRange = req.visibleRange;
         let stopped = false;
 
@@ -57,6 +87,7 @@ export class PineEngine implements ScriptingEngine {
                     cache: token,
                     prepared: req.prepared,
                     inputs,
+                    props,
                     bars: getBars,
                     market: () => req.market,
                     fetchSeries: req.fetchSeries,
@@ -83,9 +114,10 @@ export class PineEngine implements ScriptingEngine {
                     stopped = true;
                     stream?.stop();
                 },
-                update: (next) => {
+                update: (next, nextProps) => {
                     inputs = { ...inputs, ...next };
-                    if (started) start(); // re-stream with the new inputs baked in
+                    if (nextProps) props = { ...props, ...nextProps };
+                    if (started) start(); // re-stream with the new inputs/props baked in
                 },
                 setVisibleRange: (range) => {
                     visibleRange = range;
@@ -116,13 +148,14 @@ export class PineEngine implements ScriptingEngine {
             running = true;
             try {
                 const outcome = await runPineStatic({
-                    ind: indicatorFor(token, token.source, inputs),
+                    ind: indicatorFor(token, token.source, inputs, props),
                     bars: getBars(),
                     market: req.market,
                     visibleRange,
                     prepared: req.prepared,
                     instanceId: token.instanceId,
                     inputs,
+                    props,
                     fetchSeries: req.fetchSeries,
                 });
                 if (stopped) return;
@@ -145,8 +178,9 @@ export class PineEngine implements ScriptingEngine {
             stop: () => {
                 stopped = true;
             },
-            update: (next) => {
+            update: (next, nextProps) => {
                 inputs = { ...inputs, ...next };
+                if (nextProps) props = { ...props, ...nextProps };
                 if (!deferred) void runOnce();
             },
             setVisibleRange: (range) => {

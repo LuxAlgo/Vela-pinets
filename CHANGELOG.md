@@ -2,6 +2,99 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.5]
+
+### Fixed
+
+- **Untitled markers no longer collapse into one plot.** PineTS keys a plot by
+  title and its transpiler injects no callsite ids, so every untitled
+  `plotshape()` / `plotchar()` / `plotarrow()` call landed on the same plot — a
+  script with twelve untitled plotshapes painted only the last one, and a
+  non-first call's `display` / `show_last` were silently governed by the first
+  call. The engines now synthesize the callsite ids pinets' key resolution
+  already understands (the call's stable position in the per-bar marker
+  sequence), so each call keeps its own plot and its own plot-level options —
+  `display.none` on any one call hides exactly that call. Two callsites reusing
+  one title stay separate plots too.
+- **`plotchar()` draws its character.** The `char` argument was ignored and the
+  marker rendered as a circle; the character is now the marker itself (a
+  text-only label painted in `color`, the `★` default when omitted), with the
+  `text` argument rendered under it.
+- **`plotarrow()` renders with Pine's semantics.** Up/down arrows default to the
+  semantic bullish/bearish palette instead of the accent color (explicit
+  `colorup` / `colordown` still win), arrow sizes scale with the bar's |value|
+  inside the `minheight`…`maxheight` pixel window (largest |value| = maxheight,
+  TV defaults 5…100) instead of one fixed size, and `0` / `na` bars draw no
+  arrow instead of a stray default-shaped marker.
+
+## [v0.2.4]
+
+### Added
+
+- **`force_overlay=true` now works across the plotting functions.** `plot()`,
+  `plotcandle()` / `plotbar()`, `plotshape()` / `plotchar()` / `plotarrow()`, and
+  `bgcolor()` carry the flag into the model, so a script in its own pane can pin
+  those elements to the price pane — the drawing objects (`line.new`, `label.new`,
+  `box.new`, `polyline.new`, `linefill.new`) already did, and `table.new` joins
+  them. A `fill()` follows its two plots, as in Pine (where the function has no
+  flag of its own and rejects plots with mixed flags): when both are forced to
+  the price pane, the band renders there too.
+- **Declaration props end to end.** Both engines now expose the mutable
+  `indicator()` / `strategy()` declaration arguments (a strategy's
+  `initial_capital`, `commission_value`, an indicator's `precision`, …) through
+  Vela's new props channel: `prepare` publishes a props schema whose defaults are
+  the _effective_ values (source-declared ← engine default ← Pine spec),
+  `capabilities.props` announces it, and prop overrides — add-time
+  (`addIndicator({ props })`), live (`handle.setProps`), or edited on the settings
+  dialog's new **Properties** tab — are applied via the PineTS `.prop` channel and
+  replay the script. Requires `@luxalgo/vela` with props support in the
+  `ScriptingEngine` port.
+- **`props` visibility engine option** (`PineEngine` and `PineWorkerEngine`):
+  which scripts publish the declaration-props schema — `'all'` (default), `'strategy'`
+  (only `strategy()` scripts get a Properties tab), `'none'`, or an explicit
+  **whitelist of prop keys**, published in the list's order, so the host controls both
+  the subset and the tab's layout (a script owning none of the listed keys gets no
+  tab). Presentation-only: hidden props keep their source/spec values and programmatic
+  `setProps` still applies.
+- **`defaultProps` engine option** (`PineEngine` and `PineWorkerEngine`):
+  host-level defaults for declaration props, applied beneath source-declared
+  values — a script that declares the prop keeps its own value; one that omits it
+  gets the host default instead of the Pine spec one. Folded into the schema's
+  defaults, so the dialog opens on them and "Reset defaults" restores them.
+
+### Fixed
+
+- **Tables carry their full Pine styling to the chart.** Cell `width`/`height`
+  percentages and an integer pixel `text_size` now reach the renderer instead of
+  being dropped or rounded to the nearest named size. `text_formatting` works on
+  cells: `table.cell_set_text_formatting` no longer crashes the script ("not a
+  function"), and a `table.cell(text_formatting=…)` argument sets bold/italic
+  instead of silently corrupting the cell's width. A script that calls
+  `table.merge_cells` on every bar no longer accumulates hundreds of duplicate
+  merge regions — and the merged region's origin cell is no longer mistaken for
+  an absorbed one, which used to blank the merged title row entirely.
+- **Plot arguments render with Pine's semantics.** `display` now controls pane
+  visibility across the plotting functions: a plot declared
+  `display.status_line`, `display.price_scale`, or `display.data_window` stays
+  off the chart (previously the first two still painted), and `display.none` is
+  honored by `hline()`, `fill()`, `plotshape()`/`plotchar()`, `bgcolor()`, and
+  `barcolor()` too. `trackprice = true` extends the plot's latest value across
+  the pane as a dotted level line — including the level-only idiom with
+  `display.none`. `show_last = N` draws only the last N bars of a plot (lines,
+  histograms, shapes, candles, backgrounds, and bar colors alike). `histbase`
+  re-bases `style_histogram` / `style_columns` / `style_area` plots instead of
+  always growing from zero. An `hline()` without a `linestyle` defaults to
+  dashed (and an explicit `hline.style_solid` stays solid), and a plain
+  `plot()` defaults to line width 1, both as Pine defines them.
+- **`na` and `color(na)` act as invisible colors.** A `plot()` whose color
+  evaluates to `na` on some bars painted those segments in the series' fallback
+  color; they are now invisible while the plotted value survives (fills keep
+  their anchors and the value stays readable). A `plotshape()` / `plotchar()`
+  marker whose color evaluates to `na` draws nothing on that bar. And a label
+  with `color = na` keeps its declared style's placement — the bubble is simply
+  not painted (pairs with the matching Vela renderer fix for the placement
+  itself).
+
 ## [v0.2.3]
 
 ### Fixed
