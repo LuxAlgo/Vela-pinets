@@ -100,6 +100,29 @@ describe('PineWorkerEngine (proxy)', () => {
         expect(fake.last('stop')).toBeDefined();
     });
 
+    it('ships declaration props: defaultProps on prepare, props on execute/update', () => {
+        const fake = new FakeWorker();
+        const engine = new PineWorkerEngine({ createWorker: () => fake, defaultProps: { initial_capital: 50000 } });
+
+        void engine.prepare('//src', 'ind-1');
+        expect(fake.last('prepare')).toMatchObject({ defaultProps: { initial_capital: 50000 } });
+
+        // The visibility option rides the prepare message too.
+        const gated = new FakeWorker();
+        void new PineWorkerEngine({ createWorker: () => gated, props: 'strategy' }).prepare('//src', 'ind-2');
+        expect(gated.last('prepare')).toMatchObject({ propsVisibility: 'strategy' });
+
+        const session = engine.execute(makeReq({ props: { initial_capital: 25000, pyramiding: 1 } }), { onModel: () => {} });
+        expect(fake.last('execute')!.props).toEqual({ initial_capital: 25000, pyramiding: 1 });
+
+        session.update({ Length: 50 }, { pyramiding: 3 });
+        expect(fake.last('update')).toMatchObject({ inputs: { Length: 50 }, props: { pyramiding: 3 } });
+
+        // An inputs-only update carries no props key at all (merge stays worker-side).
+        session.update({ Length: 60 });
+        expect('props' in fake.last('update')!).toBe(false);
+    });
+
     it('coalesces notifyBars bursts: dirty while a run is in flight, ONE re-run when it lands', () => {
         const fake = new FakeWorker();
         const engine = new PineWorkerEngine({ createWorker: () => fake });

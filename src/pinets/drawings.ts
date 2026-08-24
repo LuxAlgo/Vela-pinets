@@ -397,6 +397,7 @@ export function toTables(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             borderWidth: Math.max(0, coerceNum(o.border_width) ?? 0),
             cells,
             merges: parseMerges(o.merges),
+            overlay: o.force_overlay === true,
         });
     }
     return out;
