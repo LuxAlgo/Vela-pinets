@@ -6,6 +6,15 @@ All notable changes to Vela-pinets, newest first.
 
 ### Fixed
 
+- **Tables carry their full Pine styling to the chart.** Cell `width`/`height`
+  percentages and an integer pixel `text_size` now reach the renderer instead of
+  being dropped or rounded to the nearest named size. `text_formatting` works on
+  cells: `table.cell_set_text_formatting` no longer crashes the script ("not a
+  function"), and a `table.cell(text_formatting=…)` argument sets bold/italic
+  instead of silently corrupting the cell's width. A script that calls
+  `table.merge_cells` on every bar no longer accumulates hundreds of duplicate
+  merge regions — and the merged region's origin cell is no longer mistaken for
+  an absorbed one, which used to blank the merged title row entirely.
 - **Plot arguments render with Pine's semantics.** `display` now controls pane
   visibility across the plotting functions: a plot declared
   `display.status_line`, `display.price_scale`, or `display.data_window` stays

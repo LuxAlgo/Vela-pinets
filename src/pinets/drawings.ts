@@ -334,6 +334,18 @@ function normPosition(raw: unknown): TablePosition {
     return (TABLE_POSITIONS as readonly string[]).includes(s) ? (s as TablePosition) : 'top_right';
 }
 
+/** Pine cell `text_size`: named constants map through; an integer is raw pixels. */
+function normCellSize(raw: unknown): TableCell['textSize'] {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+    return normLabelSize(raw);
+}
+
+/** Pine cell width/height: a percent of the pane; 0 (the default) = size to content. */
+function normCellDim(raw: unknown): number | undefined {
+    const n = coerceNum(raw);
+    return n !== undefined && n > 0 ? n : undefined;
+}
+
 function parseCell(raw: unknown): TableCell | null {
     if (!raw || typeof raw !== 'object') return null;
     const c = raw as Record<string, unknown>;
@@ -346,18 +358,24 @@ function parseCell(raw: unknown): TableCell | null {
         bgColor: normColor(c.bgcolor),
         hAlign: normHAlign(c.text_halign),
         vAlign: normVAlign(c.text_valign),
-        textSize: normLabelSize(c.text_size),
+        textSize: normCellSize(c.text_size),
         fontFamily: normFont(c.text_font_family),
         tooltip: tip && tip.length > 0 ? tip : undefined,
         bold: fmt.includes('bold'),
         italic: fmt.includes('italic'),
+        width: normCellDim(c.width),
+        height: normCellDim(c.height),
         merged: c._merged === true,
     };
 }
 
+/** Distinct merge regions. A script calling `table.merge_cells` on every bar makes
+ *  PineTS append the same region once per call — hundreds of duplicates by the
+ *  last bar; the model carries each region once. */
 function parseMerges(raw: unknown): TableMerge[] {
     if (!Array.isArray(raw)) return [];
     const out: TableMerge[] = [];
+    const seen = new Set<string>();
     for (const m of raw) {
         if (!m || typeof m !== 'object') continue;
         const o = m as Record<string, unknown>;
@@ -366,12 +384,16 @@ function parseMerges(raw: unknown): TableMerge[] {
         const ec = coerceNum(o.endCol ?? o.end_column ?? o.endColumn);
         const er = coerceNum(o.endRow ?? o.end_row);
         if (sc === undefined || sr === undefined || ec === undefined || er === undefined) continue;
-        out.push({
+        const merge: TableMerge = {
             startCol: Math.min(Math.round(sc), Math.round(ec)),
             startRow: Math.min(Math.round(sr), Math.round(er)),
             endCol: Math.max(Math.round(sc), Math.round(ec)),
             endRow: Math.max(Math.round(sr), Math.round(er)),
-        });
+        };
+        const key = `${merge.startCol}:${merge.startRow}:${merge.endCol}:${merge.endRow}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(merge);
     }
     return out;
 }
@@ -384,6 +406,14 @@ export function toTables(plot: PinePlot, instanceId: string, ids: IdentityMap): 
         const cells: Array<Array<TableCell | null>> = rawCells.map((row) =>
             (Array.isArray(row) ? (row as unknown[]) : []).map((c) => parseCell(c)),
         );
+        const merges = parseMerges(o.merges);
+        // Repeated `table.merge_cells` calls make PineTS stamp `_merged` on the
+        // ORIGIN cell too (self-parent forwarding on the second call). Only the
+        // absorbed cells are merged — the origin is the one that paints.
+        for (const m of merges) {
+            const origin = cells[m.startRow]?.[m.startCol];
+            if (origin?.merged) origin.merged = false;
+        }
         out.push({
             id: ids.next(instanceId, 'table', String(o.id ?? out.length)),
             paneId: 'unrouted',
@@ -396,7 +426,7 @@ export function toTables(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             borderColor: normColor(o.border_color),
             borderWidth: Math.max(0, coerceNum(o.border_width) ?? 0),
             cells,
-            merges: parseMerges(o.merges),
+            merges,
             overlay: o.force_overlay === true,
         });
     }
