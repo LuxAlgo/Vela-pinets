@@ -6,6 +6,14 @@ All notable changes to Vela-pinets, newest first.
 
 ### Added
 
+- **`force_overlay=true` now works across the plotting functions.** `plot()`,
+  `plotcandle()` / `plotbar()`, `plotshape()` / `plotchar()` / `plotarrow()`, and
+  `bgcolor()` carry the flag into the model, so a script in its own pane can pin
+  those elements to the price pane — the drawing objects (`line.new`, `label.new`,
+  `box.new`, `polyline.new`, `linefill.new`) already did, and `table.new` joins
+  them. A `fill()` follows its two plots, as in Pine (where the function has no
+  flag of its own and rejects plots with mixed flags): when both are forced to
+  the price pane, the band renders there too.
 - **Declaration props end to end.** Both engines now expose the mutable
   `indicator()` / `strategy()` declaration arguments (a strategy's
   `initial_capital`, `commission_value`, an indicator's `precision`, …) through

@@ -38,6 +38,7 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
     const tables: DrawingTable[] = [];
     const barColors: Array<{ time: number; color: string }> = [];
     const keyToSeriesId = new Map<string, string>();
+    const overlayKeys = new Set<string>(); // plot keys declared force_overlay=true
     const pendingFills: PinePlot[] = [];
 
     for (const plot of run.plots) {
@@ -93,6 +94,7 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
             default: {
                 const id = ids.next(instanceId, cls, title);
                 keyToSeriesId.set(plot.key, id);
+                if (plot.options.force_overlay === true) overlayKeys.add(plot.key);
                 series.push(toSeries(cls, plot, id, title));
             }
         }
@@ -105,12 +107,17 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
             warnings.push(`fill "${fill.key}" references unknown plots (${fill.plot1 ?? '?'}/${fill.plot2 ?? '?'})`);
             continue;
         }
+        // Pine's fill() has no force_overlay of its own and rejects plots with mixed
+        // flags at compile time (CE10030) — a fill simply follows its anchor plots:
+        // both forced to the price pane ⇒ the band renders there too.
+        const overlay = overlayKeys.has(fill.plot1!) && overlayKeys.has(fill.plot2!);
         fills.push({
             id: ids.next(instanceId, 'fill', fill.title ?? fill.key),
             paneId: 'unrouted',
             fromSeriesId: fromId,
             toSeriesId: toId,
             ...extractFillStyle(fill),
+            ...(overlay ? { overlay: true } : {}),
         });
     }
 
@@ -196,8 +203,11 @@ function tradesToExecutions(trades: PineTrade[]): TradeExecution[] {
 }
 
 function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: string, title: string): SeriesSpec {
+    // `force_overlay=true` → the series renders on the price pane whatever pane
+    // the indicator routes to (plot/plotcandle/plotbar record it in the options).
+    const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     if (cls === 'candle' || cls === 'bar') {
-        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot) };
+        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot), ...overlay };
         const barColors = toCandleBarColors(plot);
         if (barColors) spec.barColors = barColors;
         return spec;
@@ -217,6 +227,7 @@ function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: stri
         points: applyOffset(toPoints(plot), asNumber(plot.options.offset)),
         style: { color: repColor ?? DEFAULT_COLOR, width, lineStyle: asLineStyle(plot.options.linestyle) ?? 'solid' },
         visible: !hidden,
+        ...overlay,
     };
 }
 
@@ -345,6 +356,7 @@ function asLineStyle(v: unknown): LineStyle | undefined {
 
 function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: IdentityMap): Background[] {
     const out: Background[] = [];
+    const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     const data = plot.data;
     const interval = data.length > 1 ? (data[1]?.time ?? 0) - (data[0]?.time ?? 0) : 0;
     let i = 0;
@@ -362,7 +374,7 @@ function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: I
                     j += 1;
                 } else break;
             }
-            out.push({ id: ids.next(instanceId, 'background', title), paneId: 'unrouted', from: start, to: last + interval, color });
+            out.push({ id: ids.next(instanceId, 'background', title), paneId: 'unrouted', from: start, to: last + interval, color, ...overlay });
             i = j + 1;
         } else {
             i += 1;
@@ -380,6 +392,8 @@ function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: I
 function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): DrawingLabel[] {
     const offset = asNumber(plot.options.offset);
     const shift = offset ? offset * inferIntervalMs(plot.data) : 0;
+    // plotshape/plotchar/plotarrow record force_overlay at the plot level.
+    const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     const out: DrawingLabel[] = [];
     for (const d of plot.data) {
         const v = d.value;
@@ -401,6 +415,7 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             size: markerSize(asString(opts.size) ?? asString(plot.options.size)),
             textAlign: 'center',
             fontFamily: 'default',
+            ...overlay,
         });
     }
     return out;
