@@ -8,7 +8,7 @@ import type {
     EngineWarning,
 } from '@luxalgo/vela/plugin';
 import type { OHLCV } from '@luxalgo/vela/plugin';
-import type { InputValue } from '@luxalgo/vela/plugin';
+import type { InputValue, InputSchema } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import { normalizeContext } from './normalizeContext';
 import { toScene } from './toScene';
@@ -54,15 +54,34 @@ export interface PineToken {
  */
 export type PropsVisibility = 'all' | 'strategy' | 'none';
 
+/**
+ * What the engines' `props` option accepts: a visibility mode, or an explicit
+ * WHITELIST of prop keys — only those entries are published, in the LIST's
+ * order, so the host controls both the subset and the layout of the Properties
+ * tab. A script owning none of the whitelisted keys (e.g. an `indicator()`
+ * under a strategy-only list) publishes no schema and gets no tab at all.
+ */
+export type PropsFilter = PropsVisibility | readonly string[];
+
+/** The props schema `prepare` publishes under a filter (see {@link PropsFilter}). */
+function propsFor(scanned: InstanceType<typeof Indicator>, defaultProps: Record<string, InputValue> | undefined, filter: PropsFilter): InputSchema[] {
+    if (filter === 'none') return [];
+    if (filter === 'strategy' && scanned.getDeclarationType() !== 'strategy') return [];
+    const all = mapProps(scanned, defaultProps);
+    if (typeof filter === 'string') return all;
+    const byKey = new Map(all.map((p) => [p.key, p]));
+    return filter.map((key) => byKey.get(key)).filter((p): p is InputSchema => p !== undefined);
+}
+
 /** Parse a Pine source: inputs + declaration-props schemas + metadata + viewport-dependence.
  *  No market data. `defaultProps` = the engine's configured prop defaults, folded into the
  *  props schema's effective `defval`s (beneath source-declared values); `propsVisibility`
- *  gates which scripts publish the schema at all (default: every script). */
-export function preparePine(source: string, instanceId: string, defaultProps?: Record<string, InputValue>, propsVisibility: PropsVisibility = 'all'): PreparedScript {
+ *  gates which scripts publish the schema — and which entries (default: every script,
+ *  every mutable prop). */
+export function preparePine(source: string, instanceId: string, defaultProps?: Record<string, InputValue>, propsVisibility: PropsFilter = 'all'): PreparedScript {
     const scanned = Indicator.from(source);
     const inputs = mapInputs(scanned.getInputsMeta());
-    const showProps = propsVisibility === 'all' || (propsVisibility === 'strategy' && scanned.getDeclarationType() === 'strategy');
-    const props = showProps ? mapProps(scanned, defaultProps) : [];
+    const props = propsFor(scanned, defaultProps, propsVisibility);
     const overlay = /overlay\s*[:=]\s*true/.test(source);
     // strategy() declares exactly like indicator() — without the alternative, every
     // strategy script showed a placeholder "Indicator" legend title until its first run.

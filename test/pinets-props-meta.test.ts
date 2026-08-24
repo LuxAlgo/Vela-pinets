@@ -78,6 +78,17 @@ describe('preparePine — props visibility gate', () => {
         expect(preparePine(STRATEGY_SRC, 'i1', undefined, 'none').props).toBeUndefined();
         expect(preparePine(INDICATOR_SRC, 'i2').props).toBeDefined();
     });
+
+    it('a key whitelist publishes only those entries, in the LIST order', () => {
+        const props = preparePine(STRATEGY_SRC, 'i1', undefined, ['currency', 'initial_capital', 'not_a_prop']).props!;
+        // Unknown keys drop; the list's order wins over the schema's.
+        expect(props.map((p) => p.key)).toEqual(['currency', 'initial_capital']);
+        expect(props[1]!.defval).toBe(25000); // effective defaults still resolve
+    });
+
+    it('a strategy-only whitelist leaves an indicator() with no props at all', () => {
+        expect(preparePine(INDICATOR_SRC, 'i2', undefined, ['initial_capital', 'pyramiding']).props).toBeUndefined();
+    });
 });
 
 describe('applyProps — overrides onto an Indicator instance', () => {

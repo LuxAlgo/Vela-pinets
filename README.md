@@ -31,9 +31,10 @@ plot(ta.ema(close, 20), color=color.orange)`);
   them on the settings dialog's **Properties** tab, and hosts override them via
   `addIndicator({ props })` / `handle.setProps()`. The optional `defaultProps` engine
   option (`new PineEngine({ defaultProps: { initial_capital: 50000 } })`) sets host-level
-  defaults for scripts that don't declare the prop themselves, and `props: 'all' |
-  'strategy' | 'none'` gates which scripts publish the schema at all (`'strategy'`
-  reproduces the TradingView split: a Properties tab for strategies only).
+  defaults for scripts that don't declare the prop themselves, and `props` gates which
+  scripts publish the schema — `'all' | 'strategy' | 'none'`, or a whitelist of prop
+  keys published in the list's order (`'strategy'` gives strategies a Properties tab
+  while plain indicators keep an inputs-only dialog).
 - **Browser builds** — `vela-pinets.global.js` / `.global.min.js` expose
   `window.VelaPinets` for script-tag usage; load `vela.global.js` first.
 

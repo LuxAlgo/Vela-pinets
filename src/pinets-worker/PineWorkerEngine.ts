@@ -11,7 +11,7 @@ import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { BarRange } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
-import type { PropsVisibility } from '../pinets/runtime';
+import type { PropsFilter } from '../pinets/runtime';
 import workerCode from 'inline-worker:./worker.ts';
 
 export interface PineWorkerOptions {
@@ -34,10 +34,12 @@ export interface PineWorkerOptions {
     /**
      * Which scripts publish the declaration-props schema (drives whether the
      * settings dialog shows a "Properties" tab): `'all'` (default) every script,
-     * `'strategy'` only `strategy()` scripts, `'none'` no script. Presentation-only:
-     * hidden props keep their source/spec values, and `setProps` still applies.
+     * `'strategy'` only `strategy()` scripts, `'none'` no script — or an explicit
+     * WHITELIST of prop keys, published in the list's order (a script owning none
+     * of the listed keys gets no tab). Presentation-only: hidden props keep their
+     * source/spec values, and `setProps` still applies.
      */
-    props?: PropsVisibility;
+    props?: PropsFilter;
 }
 
 /**
@@ -86,7 +88,7 @@ export class PineWorkerEngine implements ScriptingEngine {
     private worker: WorkerLike | null = null;
     private readonly spawn: () => WorkerLike;
     private readonly defaultProps: Record<string, InputValue> | undefined;
-    private readonly propsVisibility: PropsVisibility | undefined;
+    private readonly propsVisibility: PropsFilter | undefined;
     private readonly prepares = new Map<number, { resolve: (p: PreparedScript) => void; reject: (e: Error) => void }>();
     private readonly sessions = new Map<number, SessionEntry>();
     private reqId = 0;

@@ -18,9 +18,11 @@ All notable changes to Vela-pinets, newest first.
   `ScriptingEngine` port.
 - **`props` visibility engine option** (`PineEngine` and `PineWorkerEngine`):
   which scripts publish the declaration-props schema — `'all'` (default), `'strategy'`
-  (only `strategy()` scripts get a Properties tab, the TradingView-style split), or
-  `'none'`. Presentation-only: hidden props keep their source/spec values and
-  programmatic `setProps` still applies.
+  (only `strategy()` scripts get a Properties tab), `'none'`, or an explicit
+  **whitelist of prop keys**, published in the list's order, so the host controls both
+  the subset and the tab's layout (a script owning none of the listed keys gets no
+  tab). Presentation-only: hidden props keep their source/spec values and programmatic
+  `setProps` still applies.
 - **`defaultProps` engine option** (`PineEngine` and `PineWorkerEngine`):
   host-level defaults for declaration props, applied beneath source-declared
   values — a script that declares the prop keeps its own value; one that omits it

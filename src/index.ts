@@ -5,6 +5,6 @@
 // `engines: { pine: () => new PineWorkerEngine() }`.
 export { PineEngine } from './pinets/PineEngine';
 export type { PineEngineOptions } from './pinets/PineEngine';
-export type { PropsVisibility } from './pinets/runtime';
+export type { PropsVisibility, PropsFilter } from './pinets/runtime';
 export { PineWorkerEngine } from './pinets-worker/PineWorkerEngine';
 export type { PineWorkerOptions } from './pinets-worker/PineWorkerEngine';

@@ -17,7 +17,7 @@ import {
     type LiveStreamHandle,
     type IndicatorCache,
     type PineToken,
-    type PropsVisibility,
+    type PropsFilter,
 } from './runtime';
 
 /** The prepared token plus the in-process Indicator cache (reused across re-runs/ticks). */
@@ -36,10 +36,12 @@ export interface PineEngineOptions {
     /**
      * Which scripts publish the declaration-props schema (drives whether the
      * settings dialog shows a "Properties" tab): `'all'` (default) every script,
-     * `'strategy'` only `strategy()` scripts, `'none'` no script. Presentation-only:
-     * hidden props keep their source/spec values, and `setProps` still applies.
+     * `'strategy'` only `strategy()` scripts, `'none'` no script — or an explicit
+     * WHITELIST of prop keys, published in the list's order (a script owning none
+     * of the listed keys gets no tab). Presentation-only: hidden props keep their
+     * source/spec values, and `setProps` still applies.
      */
-    props?: PropsVisibility;
+    props?: PropsFilter;
 }
 
 /**
@@ -53,7 +55,7 @@ export class PineEngine implements ScriptingEngine {
     readonly language = 'pine';
     readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true, props: true };
     private readonly defaultProps: Record<string, InputValue> | undefined;
-    private readonly propsVisibility: PropsVisibility;
+    private readonly propsVisibility: PropsFilter;
 
     constructor(opts: PineEngineOptions = {}) {
         this.defaultProps = opts.defaultProps;
