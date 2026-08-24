@@ -4,5 +4,7 @@
 // one per chart: `chart.registerEngine('pine', new PineEngine())`, or the widget's
 // `engines: { pine: () => new PineWorkerEngine() }`.
 export { PineEngine } from './pinets/PineEngine';
+export type { PineEngineOptions } from './pinets/PineEngine';
+export type { PropsVisibility, PropsFilter } from './pinets/runtime';
 export { PineWorkerEngine } from './pinets-worker/PineWorkerEngine';
 export type { PineWorkerOptions } from './pinets-worker/PineWorkerEngine';

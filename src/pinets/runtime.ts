@@ -8,11 +8,12 @@ import type {
     EngineWarning,
 } from '@luxalgo/vela/plugin';
 import type { OHLCV } from '@luxalgo/vela/plugin';
-import type { InputValue } from '@luxalgo/vela/plugin';
+import type { InputValue, InputSchema } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import { normalizeContext } from './normalizeContext';
 import { toScene } from './toScene';
 import { mapInputs } from './inputsMeta';
+import { mapProps, applyProps } from './propsMeta';
 import { ensurePineTablePatch } from './tablePatch';
 import { ensurePineMarkerPatch } from './markerPatch';
 
@@ -47,9 +48,42 @@ export interface PineToken {
     instanceId: string;
 }
 
-/** Parse a Pine source: inputs schema + declaration metadata + viewport-dependence. No market data. */
-export function preparePine(source: string, instanceId: string): PreparedScript {
-    const inputs = mapInputs(Indicator.from(source).getInputsMeta());
+/**
+ * Which scripts publish a declaration-props schema (the settings dialog's
+ * "Properties" tab): every script, only `strategy()` scripts, or none.
+ * Presentation-only — hidden props keep their source/spec values at run time,
+ * and programmatic `setProps` overrides still apply.
+ */
+export type PropsVisibility = 'all' | 'strategy' | 'none';
+
+/**
+ * What the engines' `props` option accepts: a visibility mode, or an explicit
+ * WHITELIST of prop keys — only those entries are published, in the LIST's
+ * order, so the host controls both the subset and the layout of the Properties
+ * tab. A script owning none of the whitelisted keys (e.g. an `indicator()`
+ * under a strategy-only list) publishes no schema and gets no tab at all.
+ */
+export type PropsFilter = PropsVisibility | readonly string[];
+
+/** The props schema `prepare` publishes under a filter (see {@link PropsFilter}). */
+function propsFor(scanned: InstanceType<typeof Indicator>, defaultProps: Record<string, InputValue> | undefined, filter: PropsFilter): InputSchema[] {
+    if (filter === 'none') return [];
+    if (filter === 'strategy' && scanned.getDeclarationType() !== 'strategy') return [];
+    const all = mapProps(scanned, defaultProps);
+    if (typeof filter === 'string') return all;
+    const byKey = new Map(all.map((p) => [p.key, p]));
+    return filter.map((key) => byKey.get(key)).filter((p): p is InputSchema => p !== undefined);
+}
+
+/** Parse a Pine source: inputs + declaration-props schemas + metadata + viewport-dependence.
+ *  No market data. `defaultProps` = the engine's configured prop defaults, folded into the
+ *  props schema's effective `defval`s (beneath source-declared values); `propsVisibility`
+ *  gates which scripts publish the schema — and which entries (default: every script,
+ *  every mutable prop). */
+export function preparePine(source: string, instanceId: string, defaultProps?: Record<string, InputValue>, propsVisibility: PropsFilter = 'all'): PreparedScript {
+    const scanned = Indicator.from(source);
+    const inputs = mapInputs(scanned.getInputsMeta());
+    const props = propsFor(scanned, defaultProps, propsVisibility);
     const overlay = /overlay\s*[:=]\s*true/.test(source);
     // strategy() declares exactly like indicator() — without the alternative, every
     // strategy script showed a placeholder "Indicator" legend title until its first run.
@@ -57,18 +91,20 @@ export function preparePine(source: string, instanceId: string): PreparedScript 
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
-    return { language: 'pine', inputs, meta: { title, overlay }, reactsToViewport, token: { source, instanceId } satisfies PineToken };
+    return { language: 'pine', inputs, ...(props.length > 0 ? { props } : {}), meta: { title, overlay }, reactsToViewport, token: { source, instanceId } satisfies PineToken };
 }
 
 /**
- * A fresh Indicator per input-set: PineTS bakes input overrides at construction, so
- * reuse the last instance when inputs are unchanged (live ticks / re-runs) to avoid
- * re-transpiling on every poke.
+ * A fresh Indicator per (input, prop)-set: PineTS bakes input overrides at construction
+ * and prop overrides via `.prop` writes, so reuse the last instance when both bags are
+ * unchanged (live ticks / re-runs) to avoid re-transpiling on every poke.
  */
-export function indicatorFor(cache: IndicatorCache, source: string, inputs: Record<string, InputValue>): InstanceType<typeof Indicator> {
-    const key = JSON.stringify(inputs);
+export function indicatorFor(cache: IndicatorCache, source: string, inputs: Record<string, InputValue>, props: Record<string, InputValue> = {}): InstanceType<typeof Indicator> {
+    const key = JSON.stringify([inputs, props]);
     if (cache.lastKey !== key || !cache.lastInd) {
-        cache.lastInd = new Indicator(source, inputs);
+        const ind = new Indicator(source, inputs);
+        applyProps(ind, props);
+        cache.lastInd = ind;
         cache.lastKey = key;
     }
     return cache.lastInd;
@@ -83,9 +119,10 @@ export async function runPineStatic(opts: {
     prepared: PreparedScript;
     instanceId: string;
     inputs: Record<string, InputValue>;
+    props?: Record<string, InputValue>;
     fetchSeries: FetchSeries | undefined;
 }): Promise<PineRunResult> {
-    const { ind, bars, market, visibleRange, prepared, instanceId, inputs, fetchSeries } = opts;
+    const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries } = opts;
     ensurePineTablePatch();
     ensurePineMarkerPatch();
     const klines = toKlines(bars);
@@ -107,7 +144,7 @@ export async function runPineStatic(opts: {
     const reactsToViewport = typeof pine.usesVisibleRange === 'function' ? pine.usesVisibleRange() : false;
 
     return {
-        model: pineCtxToModel(ctx, instanceId, prepared, inputs, bars[0]?.time),
+        model: pineCtxToModel(ctx, instanceId, prepared, inputs, props ?? {}, bars[0]?.time),
         alerts: (ctx.alerts ?? []).map(mapAlert),
         warnings: (ctx.warnings ?? []).map(mapWarning),
         reactsToViewport,
@@ -121,10 +158,14 @@ export async function runPineStatic(opts: {
  * model's dense arrays and `bar_index` drawings to the chart through it (offset 0 when
  * the run spanned the whole chart, the norm).
  */
-export function pineCtxToModel(ctx: unknown, instanceId: string, prepared: PreparedScript, inputs: Record<string, InputValue>, anchorTime?: number): IndicatorModel {
+export function pineCtxToModel(ctx: unknown, instanceId: string, prepared: PreparedScript, inputs: Record<string, InputValue>, props: Record<string, InputValue>, anchorTime?: number): IndicatorModel {
     const { model } = toScene(normalizeContext(ctx), instanceId);
     model.inputs = prepared.inputs;
     model.inputValues = { ...defaultsOf(prepared.inputs), ...inputs };
+    if (prepared.props) {
+        model.props = prepared.props;
+        model.propValues = { ...defaultsOf(prepared.props), ...props };
+    }
     if (anchorTime != null) model.anchorTime = anchorTime;
     return model;
 }
@@ -236,6 +277,7 @@ export function openLiveStream(opts: {
     cache: IndicatorCache;
     prepared: PreparedScript;
     inputs: Record<string, InputValue>;
+    props?: Record<string, InputValue>;
     bars: () => OHLCV[];
     market: () => ExecutionMarket;
     fetchSeries?: FetchSeries;
@@ -247,8 +289,8 @@ export function openLiveStream(opts: {
 }): LiveStreamHandle {
     const bars = opts.bars();
     ensurePineTablePatch();
-    ensurePineMarkerPatch();
-    const ind = indicatorFor(opts.cache, opts.token.source, opts.inputs);
+    ensurePineMarkerPatch();    
+    const ind = indicatorFor(opts.cache, opts.token.source, opts.inputs, opts.props ?? {});
     const anchorTime = bars[0]?.time;
     // pageSize = full length: the initial drain must emit ONE complete model (a smaller
     // page would mount a partial one); ≥1 so an empty array can't zero the page size.
@@ -266,7 +308,7 @@ export function openLiveStream(opts: {
         if (stopped) return;
         lastCtx = ctx;
         try {
-            opts.onModel(pineCtxToModel(ctx, opts.token.instanceId, opts.prepared, opts.inputs, anchorTime));
+            opts.onModel(pineCtxToModel(ctx, opts.token.instanceId, opts.prepared, opts.inputs, opts.props ?? {}, anchorTime));
         } catch (err) {
             opts.onError?.(err instanceof Error ? err : new Error(String(err)));
         }
