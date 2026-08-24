@@ -2,7 +2,7 @@
 
 All notable changes to Vela-pinets, newest first.
 
-## [Unreleased]
+## [v0.2.5]
 
 ### Fixed
 
@@ -72,7 +72,7 @@ All notable changes to Vela-pinets, newest first.
   `indicator()` / `strategy()` declaration arguments (a strategy's
   `initial_capital`, `commission_value`, an indicator's `precision`, …) through
   Vela's new props channel: `prepare` publishes a props schema whose defaults are
-  the *effective* values (source-declared ← engine default ← Pine spec),
+  the _effective_ values (source-declared ← engine default ← Pine spec),
   `capabilities.props` announces it, and prop overrides — add-time
   (`addIndicator({ props })`), live (`handle.setProps`), or edited on the settings
   dialog's new **Properties** tab — are applied via the PineTS `.prop` channel and
