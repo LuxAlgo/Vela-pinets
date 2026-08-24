@@ -1,13 +1,13 @@
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
-import type { SeriesSpec, SeriesPoint, LineLikeKind, LineStyle, CandleSeries, CandleBarColor } from '@luxalgo/vela/plugin';
+import type { SeriesSpec, SeriesPoint, LineLikeKind, LineLikeStyle, LineStyle, CandleSeries, CandleBarColor } from '@luxalgo/vela/plugin';
 import type { Fill, FillGradientStop, Background, PriceLine } from '@luxalgo/vela/plugin';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '@luxalgo/vela/plugin';
 import type { TradeExecution } from '@luxalgo/vela/plugin';
 import type { PineRun, PinePlot, PineTrade } from './PineRun';
 import { asString, asNumber } from './PineRun';
 import { classifyStyle } from './styleMap';
-import { normColor } from './colors';
+import { normColor, isVisibleColor, INVISIBLE_COLOR } from './colors';
 import { IdentityMap } from './identityMap';
 import { toLines, toBoxes, toLabels, toPolylines, toLinefills, toTables } from './drawings';
 import { ACCENT } from '@luxalgo/vela/plugin';
@@ -48,16 +48,20 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
         switch (cls) {
             case 'skip':
                 break;
-            case 'barcolor':
+            case 'barcolor': {
                 // Per-bar candle recolor. `value` is the barcolor condition (true / na);
                 // a `na` color (no color this bar) leaves the candle's default colors.
-                for (const d of plot.data) {
+                if (!displayIncludesPane(plot.options.display)) break;
+                const first = showLastStart(plot.data.length, asNumber(plot.options.show_last));
+                for (let i = first; i < plot.data.length; i += 1) {
+                    const d = plot.data[i]!;
                     const color = normColor(d.options?.color);
                     if (color) barColors.push({ time: d.time, color });
                 }
                 break;
+            }
             case 'fill':
-                pendingFills.push(plot);
+                if (displayIncludesPane(plot.options.display)) pendingFills.push(plot);
                 break;
             case 'hline': {
                 const line = toPriceLine(plot, title, instanceId, ids);
@@ -65,7 +69,7 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
                 break;
             }
             case 'background':
-                backgrounds.push(...toBackgrounds(plot, title, instanceId, ids));
+                if (displayIncludesPane(plot.options.display)) backgrounds.push(...toBackgrounds(plot, title, instanceId, ids));
                 break;
             case 'drawing_line':
                 lines.push(...toLines(plot, instanceId, ids));
@@ -89,13 +93,15 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
                 // plotshape/plotchar/plotarrow → rendered as labels (shapes + callouts)
                 // so we get faithful diamonds/triangles/label bubbles and absolute /
                 // pane top-bottom placement that native bar-relative markers can't do.
-                labels.push(...markersToLabels(plot, instanceId, ids));
+                if (displayIncludesPane(plot.options.display)) labels.push(...markersToLabels(plot, instanceId, ids));
                 break;
             default: {
                 const id = ids.next(instanceId, cls, title);
                 keyToSeriesId.set(plot.key, id);
                 if (plot.options.force_overlay === true) overlayKeys.add(plot.key);
                 series.push(toSeries(cls, plot, id, title));
+                const track = trackPriceLine(plot, title, instanceId, ids);
+                if (track) priceLines.push(track);
             }
         }
     }
@@ -203,32 +209,86 @@ function tradesToExecutions(trades: PineTrade[]): TradeExecution[] {
 }
 
 function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: string, title: string): SeriesSpec {
+    const showLast = asNumber(plot.options.show_last);
     // `force_overlay=true` → the series renders on the price pane whatever pane
     // the indicator routes to (plot/plotcandle/plotbar record it in the options).
     const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     if (cls === 'candle' || cls === 'bar') {
-        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot), ...overlay };
+        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot, showLastStart(plot.data.length, showLast)), ...overlay };
         const barColors = toCandleBarColors(plot);
         if (barColors) spec.barColors = barColors;
         return spec;
     }
     const kind = cls;
     const repColor = normColor(representativeColor(plot));
-    // Hidden = `display.none` / `display.data_window` (declared off-chart) or a `na`
-    // color. Kept as a series (with points) so it can still anchor a fill().
-    const display = asString(plot.options.display);
-    const hidden = display === 'none' || display === 'data_window' || !repColor;
-    const width = asNumber(plot.options.linewidth) ?? (kind === 'line' || kind === 'step' ? 2 : 1);
-    return {
-        id,
-        title,
-        paneId: 'unrouted',
-        kind,
-        points: applyOffset(toPoints(plot), asNumber(plot.options.offset)),
-        style: { color: repColor ?? DEFAULT_COLOR, width, lineStyle: asLineStyle(plot.options.linestyle) ?? 'solid' },
-        visible: !hidden,
-        ...overlay,
-    };
+    // Hidden = declared off-pane (a `display` without the pane flag: none,
+    // data_window, status_line, price_scale) or a `na` color. Kept as a series
+    // (with points) so it can still anchor a fill().
+    const hidden = !displayIncludesPane(plot.options.display) || !repColor;
+    const width = asNumber(plot.options.linewidth) ?? 1;
+    const connected = kind === 'line' || kind === 'step' || kind === 'area';
+    const points = applyOffset(applyShowLast(toPoints(plot), showLast, connected), asNumber(plot.options.offset));
+    const style: LineLikeStyle = { color: repColor ?? DEFAULT_COLOR, width, lineStyle: asLineStyle(plot.options.linestyle) ?? 'solid' };
+    // `histbase` re-bases the styles that grow from a reference level.
+    const base = asNumber(plot.options.histbase);
+    if (base !== undefined && (kind === 'histogram' || kind === 'columns' || kind === 'area')) style.base = base;
+    return { id, title, paneId: 'unrouted', kind, points, style, visible: !hidden, ...overlay };
+}
+
+/**
+ * Pine `display.*` arrives as the enum's plain string ('all', 'none', 'pane',
+ * 'data_window', 'price_scale', 'status_line'); a `+`-combined argument
+ * concatenates the parts. A plot paints in the pane only when its display
+ * includes the pane — `display.all` (the default) or `display.pane`; a
+ * status-line / price-scale / data-window-only plot stays off-chart.
+ */
+function displayIncludesPane(v: unknown): boolean {
+    const s = asString(v);
+    return s === undefined || s.includes('all') || s.includes('pane');
+}
+
+/** First data index inside a Pine `show_last` window (0 = no trimming). */
+function showLastStart(dataLen: number, showLast: number | undefined): number {
+    if (showLast === undefined || showLast <= 0) return 0;
+    return Math.max(0, dataLen - Math.floor(showLast));
+}
+
+/**
+ * Pine `show_last=N` draws only the last N bars. Out-of-window values become
+ * gaps — the points themselves stay so fills keep their by-index alignment.
+ * Connected kinds keep one extra value as the entering segment's anchor:
+ * `show_last=1` on a line draws the one-bar segment into the last bar, as Pine
+ * does.
+ */
+function applyShowLast(points: SeriesPoint[], showLast: number | undefined, connected: boolean): SeriesPoint[] {
+    let first = showLastStart(points.length, showLast);
+    if (connected) first -= 1;
+    if (first <= 0) return points;
+    return points.map((p, i) => (i < first ? { ...p, value: null } : p));
+}
+
+/**
+ * Pine `trackprice=true` extends the plot's LAST value across the pane as a
+ * dotted price line. Deliberately independent of `display`: the documented
+ * Pine idiom draws only the level (`display.none`, or `show_last=1` with a far
+ * negative offset), so the level must survive a hidden plot.
+ */
+function trackPriceLine(plot: PinePlot, title: string, instanceId: string, ids: IdentityMap): PriceLine | null {
+    if (plot.options.trackprice !== true) return null;
+    for (let i = plot.data.length - 1; i >= 0; i -= 1) {
+        const d = plot.data[i]!;
+        if (typeof d.value !== 'number' || !Number.isFinite(d.value)) continue;
+        return {
+            id: ids.next(instanceId, 'hline', title),
+            paneId: 'unrouted',
+            price: d.value,
+            color: normColor(d.options?.color) ?? normColor(representativeColor(plot)),
+            lineStyle: 'dotted',
+            width: asNumber(plot.options.linewidth),
+            title,
+        };
+    }
+    return null;
 }
 
 /** Per-bar plotcandle/plotbar colors (`color`/`wickcolor`/`bordercolor`), or null if none vary. */
@@ -247,10 +307,17 @@ function toCandleBarColors(plot: PinePlot): Array<CandleBarColor | null> | undef
 }
 
 function toPoints(plot: PinePlot): SeriesPoint[] {
+    // PineTS stamps each bar's EVALUATED color into the point options and leaves
+    // it out (or NaN) where it evaluated to `na`. On a plot that otherwise
+    // carries per-bar colors, such a bar means "don't draw this segment" — emit
+    // a transparent override so the point survives (fills still anchor to it)
+    // but nothing is painted. A plot with no per-bar colors at all is untouched.
+    const hasPerBarColor = plot.data.some((d) => isVisibleColor(d.options?.color));
     return plot.data.map((d) => {
         const value = typeof d.value === 'number' && Number.isFinite(d.value) ? d.value : null;
         const color = normColor(d.options?.color);
-        return color ? { time: d.time, value, color } : { time: d.time, value };
+        if (color) return { time: d.time, value, color };
+        return hasPerBarColor ? { time: d.time, value, color: INVISIBLE_COLOR } : { time: d.time, value };
     });
 }
 
@@ -274,12 +341,18 @@ function applyOffset(points: SeriesPoint[], offset: number | undefined): SeriesP
     return points.map((p) => ({ ...p, time: p.time + shift }));
 }
 
-function toOhlcBars(plot: PinePlot): OHLCV[] {
-    const out: OHLCV[] = [];
-    for (const d of plot.data) {
+function toOhlcBars(plot: PinePlot, firstIdx = 0): OHLCV[] {
+    // With a `show_last` window the array stays index-aligned to the plot data
+    // (holes before the window) so the renderer's bar-index lookup still lands
+    // on the right chart bars; without one, invalid points compact as before.
+    const out: OHLCV[] = firstIdx > 0 ? new Array<OHLCV>(plot.data.length) : [];
+    for (let i = firstIdx; i < plot.data.length; i += 1) {
+        const d = plot.data[i]!;
         const v = d.value;
         if (!Array.isArray(v) || v.length < 4) continue;
-        out.push({ time: d.time, open: v[0] ?? 0, high: v[1] ?? 0, low: v[2] ?? 0, close: v[3] ?? 0 });
+        const bar: OHLCV = { time: d.time, open: v[0] ?? 0, high: v[1] ?? 0, low: v[2] ?? 0, close: v[3] ?? 0 };
+        if (firstIdx > 0) out[i] = bar;
+        else out.push(bar);
     }
     return out;
 }
@@ -326,6 +399,7 @@ function extractFillStyle(plot: PinePlot): { color?: string; colors?: Array<stri
 }
 
 function toPriceLine(plot: PinePlot, title: string, instanceId: string, ids: IdentityMap): PriceLine | null {
+    if (!displayIncludesPane(plot.options.display)) return null;
     let price: number | undefined;
     for (const d of plot.data) {
         if (typeof d.value === 'number' && Number.isFinite(d.value)) {
@@ -339,7 +413,8 @@ function toPriceLine(plot: PinePlot, title: string, instanceId: string, ids: Ide
         paneId: 'unrouted',
         price,
         color: normColor(plot.options.color),
-        lineStyle: asLineStyle(plot.options.linestyle),
+        // Pine's hline default style is dashed; solid must be asked for.
+        lineStyle: asLineStyle(plot.options.linestyle) ?? 'dashed',
         title,
         width: asNumber(plot.options.linewidth),
     };
@@ -347,11 +422,13 @@ function toPriceLine(plot: PinePlot, title: string, instanceId: string, ids: Ide
 
 /**
  * Pine line-style constants → neutral LineStyle. Handles the various emitted
- * forms: `hline` → "dashed"/"dotted"; `plot(linestyle=…)` → "linestyle_dashed".
+ * forms: `hline` → "solid"/"dashed"/"dotted"; `plot(linestyle=…)` →
+ * "linestyle_dashed". Unknown/absent → undefined (the caller picks the
+ * function's own default).
  */
 function asLineStyle(v: unknown): LineStyle | undefined {
     const s = asString(v)?.replace(/^(hline\.style_|plot\.linestyle_|linestyle_|style_)/, '');
-    return s === 'dashed' || s === 'dotted' ? s : undefined;
+    return s === 'solid' || s === 'dashed' || s === 'dotted' ? s : undefined;
 }
 
 function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: IdentityMap): Background[] {
@@ -359,7 +436,7 @@ function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: I
     const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     const data = plot.data;
     const interval = data.length > 1 ? (data[1]?.time ?? 0) - (data[0]?.time ?? 0) : 0;
-    let i = 0;
+    let i = showLastStart(data.length, asNumber(plot.options.show_last));
     while (i < data.length) {
         const d = data[i]!;
         const color = normColor(d.options?.color);
@@ -395,11 +472,18 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
     // plotshape/plotchar/plotarrow record force_overlay at the plot level.
     const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
     const out: DrawingLabel[] = [];
-    for (const d of plot.data) {
+    const first = showLastStart(plot.data.length, asNumber(plot.options.show_last));
+    for (let i = first; i < plot.data.length; i += 1) {
+        const d = plot.data[i]!;
         const v = d.value;
         const isNum = typeof v === 'number' && Number.isFinite(v);
         if (v !== true && !isNum) continue; // only bars where the shape shows
         const opts = d.options ?? plot.options;
+        // PineTS stamps the bar's EVALUATED color: `undefined` means no color
+        // argument (default applies), while `na` arrives as NaN/null/an na
+        // object — an evaluated-but-invisible color draws no shape on this bar.
+        const rawColor = opts.color !== undefined ? opts.color : plot.options.color;
+        if (rawColor !== undefined && !isVisibleColor(rawColor)) continue;
         const text = asString(opts.text) ?? asString(plot.options.text);
         out.push({
             id: ids.next(instanceId, 'label', `${plot.key}#${out.length}`),

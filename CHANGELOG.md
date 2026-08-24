@@ -4,6 +4,39 @@ All notable changes to Vela-pinets, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tables carry their full Pine styling to the chart.** Cell `width`/`height`
+  percentages and an integer pixel `text_size` now reach the renderer instead of
+  being dropped or rounded to the nearest named size. `text_formatting` works on
+  cells: `table.cell_set_text_formatting` no longer crashes the script ("not a
+  function"), and a `table.cell(text_formatting=…)` argument sets bold/italic
+  instead of silently corrupting the cell's width. A script that calls
+  `table.merge_cells` on every bar no longer accumulates hundreds of duplicate
+  merge regions — and the merged region's origin cell is no longer mistaken for
+  an absorbed one, which used to blank the merged title row entirely.
+- **Plot arguments render with Pine's semantics.** `display` now controls pane
+  visibility across the plotting functions: a plot declared
+  `display.status_line`, `display.price_scale`, or `display.data_window` stays
+  off the chart (previously the first two still painted), and `display.none` is
+  honored by `hline()`, `fill()`, `plotshape()`/`plotchar()`, `bgcolor()`, and
+  `barcolor()` too. `trackprice = true` extends the plot's latest value across
+  the pane as a dotted level line — including the level-only idiom with
+  `display.none`. `show_last = N` draws only the last N bars of a plot (lines,
+  histograms, shapes, candles, backgrounds, and bar colors alike). `histbase`
+  re-bases `style_histogram` / `style_columns` / `style_area` plots instead of
+  always growing from zero. An `hline()` without a `linestyle` defaults to
+  dashed (and an explicit `hline.style_solid` stays solid), and a plain
+  `plot()` defaults to line width 1, both as Pine defines them.
+- **`na` and `color(na)` act as invisible colors.** A `plot()` whose color
+  evaluates to `na` on some bars painted those segments in the series' fallback
+  color; they are now invisible while the plotted value survives (fills keep
+  their anchors and the value stays readable). A `plotshape()` / `plotchar()`
+  marker whose color evaluates to `na` draws nothing on that bar. And a label
+  with `color = na` keeps its declared style's placement — the bubble is simply
+  not painted (pairs with the matching Vela renderer fix for the placement
+  itself).
+
 ### Added
 
 - **`force_overlay=true` now works across the plotting functions.** `plot()`,
