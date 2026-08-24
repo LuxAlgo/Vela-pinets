@@ -250,6 +250,7 @@ export function toLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
         if (yloc === 'price' && yRaw === undefined) continue; // price anchor needs a y
         const textStr = asString(o.text);
         const tip = asString(o.tooltip);
+        const fmt = (asString(o.text_formatting) ?? '').toLowerCase();
         // `color = na` → bubble/marker is invisible, only the text shows (Pine semantics).
         const { color, invisible } = resolveLineColor(o.color);
         out.push({
@@ -268,6 +269,8 @@ export function toLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             textAlign: normHAlign(o.textalign),
             tooltip: tip && tip.length > 0 ? tip : undefined,
             fontFamily: normFont(o.text_font_family),
+            bold: fmt.includes('bold'),
+            italic: fmt.includes('italic'),
             overlay: o.force_overlay === true,
         });
     }

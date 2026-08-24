@@ -34,6 +34,20 @@ describe('pine/toScene (against real PineTS fixtures)', () => {
         expect(model.priceLines.map((p) => p.price).sort((a, b) => a - b)).toEqual([30, 70]);
     });
 
+    it('carries a declared shorttitle into the model (legend/settings swap to it once loaded)', () => {
+        const fixture = emaFixture as { indicator?: Record<string, unknown> };
+        const withShort = { ...fixture, indicator: { ...fixture.indicator, shorttitle: 'EMA-S' } };
+        const { model } = toScene(normalizeContext(withShort), 'ind-1');
+        expect(model.title).toBe(fixture.indicator?.title);
+        expect(model.shorttitle).toBe('EMA-S');
+    });
+
+    it('omits shorttitle from the model when the script declares none', () => {
+        const { model } = toScene(normalizeContext(emaFixture), 'ind-1');
+        expect(model.shorttitle).toBeUndefined();
+        expect('shorttitle' in model).toBe(false);
+    });
+
     it('Extras: fill resolves plot1/plot2 → series ids; markers + background present', () => {
         const { model } = toScene(normalizeContext(extrasFixture), 'ind-1');
         const lines = model.series.filter((s) => s.kind === 'line');

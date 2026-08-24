@@ -131,6 +131,9 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
     const model: IndicatorModel = {
         id: instanceId,
         title: run.meta.title,
+        // Pine's compact display name — the legend chip and settings dialog swap to it
+        // once the first run lands (the loading placeholder shows the full title).
+        ...(run.meta.shorttitle ? { shorttitle: run.meta.shorttitle } : {}),
         overlay: run.meta.overlay,
         paneHint: run.meta.overlay ? 'price' : 'new',
         series,
