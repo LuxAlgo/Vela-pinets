@@ -2,6 +2,15 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.6]
+
+### Changed
+
+- **Peer floor is `@luxalgo/vela` `^0.6.9`.** Declaration props, `force_overlay` on
+  plots/tables, and Pine table cell sizing type-check against that release's engine
+  port — CI `npm ci` was still installing 0.6.8 from the lockfile, which does not
+  declare those fields.
+
 ## [v0.2.5]
 
 ### Fixed
