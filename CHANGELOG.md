@@ -2,6 +2,25 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.7]
+
+### Added
+
+- **Session-aware `closeTime` on the klines handed to PineTS.** The engine's kline
+  contract takes an optional per-bar close time (its own net is `open + tf`) and asks
+  providers for the *session* close; the runtime now computes it template-locally from
+  the chart syminfo (`session` / `session_extended` / `timezone`): the last intraday
+  bucket runs short (15:00 + 1h → 15:15), a daily bar labeled at the session open
+  closes at the session end, and a trading-day roll span (futures `1700-1600`) closes
+  next-day. Whether the regular or the extended window rules is read off the bars
+  themselves — any bar outside the regular span means the series is the extended tape.
+  Wired through all three kline paths (primary series, `request.security` secondaries,
+  the live provider). Continuous markets, W/M timeframes and out-of-window bars emit
+  nothing and keep the engine's own net; holidays and early closes are deliberately not
+  recomputed here — the resolved calendar stays the truth for consumers that need them.
+  Fixes `time_close` (and the barstate historical/realtime verdict) reporting
+  `open + tf` on session markets — futures and equities alike.
+
 ## [v0.2.6]
 
 ### Changed
