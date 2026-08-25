@@ -125,14 +125,14 @@ export async function runPineStatic(opts: {
     const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries } = opts;
     ensurePineTablePatch();
     ensurePineMarkerPatch();
-    const klines = toKlines(bars);
+    const klines = toKlines(bars, market.timeframe, market.symbolInfo as Record<string, unknown> | undefined);
     // The virtual provider: serve the chart's own series in-memory (the bars Vela
     // owns), but route any OTHER (symbol, timeframe) — i.e. request.security HTF/LTF/
     // cross-symbol — back to Vela's cache-backed gateway. PineTS reuses this same
     // provider for its secondary contexts, so MTF data is real and timeframe-separated.
     const source = {
         getMarketData: (sym?: string, tf?: string, limit?: number, sDate?: number, eDate?: number) =>
-            isChartSeries(sym, tf, market) ? Promise.resolve(klines) : secondaryKlines(fetchSeries, sym, tf, limit, sDate, eDate),
+            isChartSeries(sym, tf, market) ? Promise.resolve(klines) : secondaryKlines(fetchSeries, sym, tf, limit, sDate, eDate, syminfoForSymbol(market, sym)),
         getSymbolInfo: async (sym?: string) => syminfoForSymbol(market, sym),
     };
     const pine = new PineTS(source as never, chartTickerOf(market), market.timeframe, klines.length);
@@ -170,9 +170,98 @@ export function pineCtxToModel(ctx: unknown, instanceId: string, prepared: Prepa
     return model;
 }
 
-/** OHLCV → PineTS kline shape (openTime-keyed). */
-export function toKlines(bars: OHLCV[]): Array<Record<string, number>> {
-    return bars.map((b) => ({ openTime: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0 }));
+/** `HHMM-HHMM` → minutes-of-day span (wraps midnight when start > end, e.g. the
+ *  futures trading day `1700-1600`); null for anything else (`24x7`, the synthesized
+ *  `regular`, absent) — callers treat null as "no session vocabulary". */
+function sessionSpan(s: unknown): { start: number; end: number } | null {
+    if (typeof s !== 'string') return null;
+    const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s);
+    if (!m) return null;
+    return { start: Number(m[1]) * 60 + Number(m[2]), end: Number(m[3]) * 60 + Number(m[4]) };
+}
+
+const inSpan = (m: number, s: { start: number; end: number }): boolean => (s.start <= s.end ? m >= s.start && m < s.end : m >= s.start || m < s.end);
+
+/** Timezone offset per (tz, hour) via Intl, cached — one Intl call per distinct hour of
+ *  data keeps a 10k-bar series in the sub-millisecond range. */
+const tzOffsetCache = new Map<string, number>();
+function wallMinuteOfDay(ts: number, tz: string): number | null {
+    const key = `${tz}:${Math.floor(ts / 3_600_000)}`;
+    let off = tzOffsetCache.get(key);
+    if (off == null) {
+        try {
+            const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(ts);
+            const g = (t: string): number => Number(parts.find((p) => p.type === t)?.value ?? NaN);
+            off = Math.round((Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - ts) / 60_000);
+        } catch {
+            off = NaN;
+        }
+        if (tzOffsetCache.size > 100_000) tzOffsetCache.clear();
+        tzOffsetCache.set(key, off);
+    }
+    if (Number.isNaN(off)) return null;
+    return ((Math.floor(ts / 60_000) + off) % 1440 + 1440) % 1440;
+}
+
+/** Chart timeframe → minutes, for the closeTime cap. Intraday and daily only — W/M
+ *  session closes need trading-day grouping this template-local pass cannot do, so
+ *  they (like unknown spellings) keep the engine's own `open + tf` net. */
+function tfMinutesFor(tf: string | undefined): number | null {
+    if (tf == null) return null;
+    if (/^\d+$/.test(tf)) return Number(tf);
+    if (/^1?D$/i.test(tf)) return 1440;
+    return null;
+}
+
+/**
+ * The per-bar SESSION close for a series on a session market — TV convention, and what
+ * the engine's kline contract asks providers for: `min(open + tf, the declared session
+ * window's end)`. A daily bar labeled at the session open closes at the session end
+ * (08:30 → 15:15), the last intraday bucket runs short (15:00 + 1h → 15:15), and a
+ * trading-day roll span (`1700-1600`) closes next-day. Which window rules — regular or
+ * extended — is read off the BARS themselves: any bar outside the regular span means
+ * the series is the extended tape. Template-local like the widget's session shading:
+ * holidays/early closes are deliberately NOT recomputed here (the resolved calendar
+ * stays the truth for consumers that need them), and a bar outside every declared
+ * window falls back to the engine's `open + tf` net. DST transitions inside one bar's
+ * open→close span keep the offset of the open (off by the jump on those bars, twice a
+ * year).
+ */
+function sessionCloser(bars: OHLCV[], tf: string | undefined, syminfo: Record<string, unknown> | null | undefined): ((openMs: number) => number | null) | null {
+    const tfMin = tfMinutesFor(tf);
+    const regular = sessionSpan(syminfo?.session);
+    const tz = typeof syminfo?.timezone === 'string' ? syminfo.timezone : null;
+    if (tfMin == null || regular == null || tz == null || bars.length === 0) return null;
+    const extended = sessionSpan(syminfo?.session_extended);
+    let active = regular;
+    if (extended) {
+        for (const b of bars) {
+            const m = wallMinuteOfDay(b.time, tz);
+            if (m != null && !inSpan(m, regular) && inSpan(m, extended)) {
+                active = extended;
+                break;
+            }
+        }
+    }
+    return (openMs: number): number | null => {
+        const m = wallMinuteOfDay(openMs, tz);
+        if (m == null || !inSpan(m, active)) return null;
+        const untilEnd = (active.end - m + 1440) % 1440 || 1440;
+        return openMs + Math.min(tfMin, untilEnd) * 60_000;
+    };
+}
+
+/** OHLCV → PineTS kline shape (openTime-keyed). With a chart timeframe and a
+ *  session-market syminfo, each kline carries its session {@link sessionCloser | closeTime}
+ *  — continuous markets (and W/M) emit none and the engine's `open + tf` net applies. */
+export function toKlines(bars: OHLCV[], tf?: string, syminfo?: Record<string, unknown> | null): Array<Record<string, number>> {
+    const closer = sessionCloser(bars, tf, syminfo);
+    return bars.map((b) => {
+        const k: Record<string, number> = { openTime: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0 };
+        const ct = closer?.(b.time);
+        if (ct != null) k.closeTime = ct;
+        return k;
+    });
 }
 
 /**
@@ -203,10 +292,11 @@ export async function secondaryKlines(
     limit?: number,
     sDate?: number,
     eDate?: number,
+    syminfo?: Record<string, unknown>,
 ): Promise<Array<Record<string, number>>> {
     if (!fetchSeries || !sym || !tf) return [];
     const bars = await fetchSeries(sym, tf, { from: sDate, to: eDate, limit });
-    return toKlines(bars);
+    return toKlines(bars, tf, syminfo);
 }
 
 /** The streaming provider a live PineTS session polls (see {@link makeLiveProvider}). */
@@ -235,10 +325,11 @@ export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => Execut
         },
         getMarketData: async (ticker, tf, limit, sDate, eDate) => {
             // Secondary series (request.security HTF/LTF/cross-symbol) → cache-backed gateway.
-            if (!isChartSeries(ticker, tf, getMarket())) {
-                return secondaryKlines(fetchSeries, ticker, tf, limit, sDate, eDate);
+            const market = getMarket();
+            if (!isChartSeries(ticker, tf, market)) {
+                return secondaryKlines(fetchSeries, ticker, tf, limit, sDate, eDate, syminfoForSymbol(market, ticker));
             }
-            const klines = toKlines(getBars());
+            const klines = toKlines(getBars(), market.timeframe, market.symbolInfo as Record<string, unknown> | undefined);
             // Initial load (no sDate): full history.
             if (sDate == null) return klines;
             // Streaming update: only the forming candle + any newer bars.
