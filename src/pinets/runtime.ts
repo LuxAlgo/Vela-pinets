@@ -125,7 +125,7 @@ export async function runPineStatic(opts: {
     const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries } = opts;
     ensurePineTablePatch();
     ensurePineMarkerPatch();
-    const klines = toKlines(bars, market.timeframe, market.symbolInfo as Record<string, unknown> | undefined);
+    const klines = toKlines(bars, market.timeframe, market.symbolInfo);
     // The virtual provider: serve the chart's own series in-memory (the bars Vela
     // owns), but route any OTHER (symbol, timeframe) — i.e. request.security HTF/LTF/
     // cross-symbol — back to Vela's cache-backed gateway. PineTS reuses this same
@@ -227,12 +227,16 @@ function tfMinutesFor(tf: string | undefined): number | null {
  * open→close span keep the offset of the open (off by the jump on those bars, twice a
  * year).
  */
-function sessionCloser(bars: OHLCV[], tf: string | undefined, syminfo: Record<string, unknown> | null | undefined): ((openMs: number) => number | null) | null {
+function sessionCloser(bars: OHLCV[], tf: string | undefined, syminfo: unknown): ((openMs: number) => number | null) | null {
+    // `unknown` on purpose: callers hand over whatever symbol-info shape their feed
+    // declares (the port type varies across host versions) — one narrowing here keeps
+    // every call site assertion-free under either set of typings.
+    const si = typeof syminfo === 'object' && syminfo != null ? (syminfo as Record<string, unknown>) : null;
     const tfMin = tfMinutesFor(tf);
-    const regular = sessionSpan(syminfo?.session);
-    const tz = typeof syminfo?.timezone === 'string' ? syminfo.timezone : null;
+    const regular = sessionSpan(si?.session);
+    const tz = typeof si?.timezone === 'string' ? si.timezone : null;
     if (tfMin == null || regular == null || tz == null || bars.length === 0) return null;
-    const extended = sessionSpan(syminfo?.session_extended);
+    const extended = sessionSpan(si?.session_extended);
     let active = regular;
     if (extended) {
         for (const b of bars) {
@@ -254,7 +258,7 @@ function sessionCloser(bars: OHLCV[], tf: string | undefined, syminfo: Record<st
 /** OHLCV → PineTS kline shape (openTime-keyed). With a chart timeframe and a
  *  session-market syminfo, each kline carries its session {@link sessionCloser | closeTime}
  *  — continuous markets (and W/M) emit none and the engine's `open + tf` net applies. */
-export function toKlines(bars: OHLCV[], tf?: string, syminfo?: Record<string, unknown> | null): Array<Record<string, number>> {
+export function toKlines(bars: OHLCV[], tf?: string, syminfo?: unknown): Array<Record<string, number>> {
     const closer = sessionCloser(bars, tf, syminfo);
     return bars.map((b) => {
         const k: Record<string, number> = { openTime: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0 };
@@ -329,7 +333,7 @@ export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => Execut
             if (!isChartSeries(ticker, tf, market)) {
                 return secondaryKlines(fetchSeries, ticker, tf, limit, sDate, eDate, syminfoForSymbol(market, ticker));
             }
-            const klines = toKlines(getBars(), market.timeframe, market.symbolInfo as Record<string, unknown> | undefined);
+            const klines = toKlines(getBars(), market.timeframe, market.symbolInfo);
             // Initial load (no sDate): full history.
             if (sDate == null) return klines;
             // Streaming update: only the forming candle + any newer bars.
