@@ -2,6 +2,17 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **The loading legend shows the script's declared title.** While a script computes,
+  its legend row identifies it by the title read from the declaration — but scripts
+  declaring it in the named form (`indicator(title = "…")`), or with an apostrophe or
+  an escaped quote inside the name, showed the generic "Indicator" placeholder until
+  their first run finished. Every declaration shape now resolves to the actual title
+  from the moment the row appears.
+
 ## [v0.2.7]
 
 ### Added
