@@ -2,13 +2,24 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.8]
+
+### Fixed
+
+- **The loading legend shows the script's declared title.** While a script computes,
+  its legend row identifies it by the title read from the declaration — but scripts
+  declaring it in the named form (`indicator(title = "…")`), or with an apostrophe or
+  an escaped quote inside the name, showed the generic "Indicator" placeholder until
+  their first run finished. Every declaration shape now resolves to the actual title
+  from the moment the row appears.
+
 ## [v0.2.7]
 
 ### Added
 
 - **Session-aware `closeTime` on the klines handed to PineTS.** The engine's kline
   contract takes an optional per-bar close time (its own net is `open + tf`) and asks
-  providers for the *session* close; the runtime now computes it template-locally from
+  providers for the _session_ close; the runtime now computes it template-locally from
   the chart syminfo (`session` / `session_extended` / `timezone`): the last intraday
   bucket runs short (15:00 + 1h → 15:15), a daily bar labeled at the session open
   closes at the session end, and a trading-day roll span (futures `1700-1600`) closes

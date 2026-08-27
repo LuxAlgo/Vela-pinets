@@ -87,7 +87,13 @@ export function preparePine(source: string, instanceId: string, defaultProps?: R
     const overlay = /overlay\s*[:=]\s*true/.test(source);
     // strategy() declares exactly like indicator() — without the alternative, every
     // strategy script showed a placeholder "Indicator" legend title until its first run.
-    const title = source.match(/(?:indicator|strategy)\(\s*["']([^"']+)["']/)?.[1] ?? 'Indicator';
+    // The title argument comes in two shapes — positional (`indicator("X")`) and named
+    // (`indicator(title = "X")`) — and the string itself may hold the OTHER quote or
+    // escapes; missing any of these left the generic "Indicator" on the loading legend
+    // for the script's whole first compute. Anchored to a line start so a commented-out
+    // declaration above the real one can never win.
+    const declared = /^\s*(?:indicator|strategy)\s*\(\s*(?:title\s*=\s*)?(["'])((?:\\.|(?!\1).)*)\1/m.exec(source)?.[2];
+    const title = declared?.replace(/\\(.)/g, '$1').trim() || 'Indicator';
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
