@@ -21,6 +21,22 @@ interface RawPlot {
 }
 
 /**
+ * A declaration arg reaches the context as a plain boolean for literal values, but as
+ * a PineTS SERIES (`{ data: [...], offset }`) when the script passed a variable
+ * (`overlay=ov`) — the strict `=== true` this replaces read those as `false` and
+ * re-routed the indicator off the price pane. Unwrap to the current element; anything
+ * else is "not declared" (undefined), so the caller's default applies.
+ */
+function asBool(value: unknown): boolean | undefined {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'object' && value !== null && Array.isArray((value as { data?: unknown }).data)) {
+        const s = value as { data: unknown[]; offset?: number };
+        return asBool(s.data[s.offset ?? 0]);
+    }
+    return undefined;
+}
+
+/**
  * During streaming PineTS re-executes the forming/new bar each tick and
  * re-appends that bar's plot point WITHOUT rolling back regular plot data
  * (it rolls back drawings, not plots). So a streamed plot's `data` accumulates
@@ -49,14 +65,17 @@ function dedupeByTime(data: PinePlotPoint[]): PinePlotPoint[] {
 export function normalizeContext(ctx: unknown): PineRun {
     const c = (ctx ?? {}) as RawContext;
     const root = c.fullContext ?? c;
-    // A strategy script never calls Core.indicator(), so `ctx.indicator` stays unset and
-    // the declaration lives on `ctx.strategy.config` (same field names) — read it there,
-    // or an overlay strategy lands in its own pane with a placeholder legend title.
-    const declared = root.indicator ?? root.strategy?.config ?? {};
+    // A strategy script never calls Core.indicator(), so the declaration lives on
+    // `ctx.strategy.config` (same field names) — read it there, or an overlay strategy
+    // lands in its own pane with a placeholder legend title. Merged rather than
+    // nullish-coalesced: `Context.indicator` is declared non-optional in PineTS, so a
+    // version that default-initializes it would make `indicator ?? strategy.config`
+    // always stop at the defaults object and never reach the real declaration.
+    const declared: Record<string, unknown> = { ...root.indicator, ...root.strategy?.config };
 
     const meta: PineRunMeta = {
         title: asString(declared.title) ?? 'Indicator',
-        overlay: declared.overlay === true,
+        overlay: asBool(declared.overlay) ?? false,
         precision: asNumber(declared.precision),
         shorttitle: asString(declared.shorttitle),
         format: asString(declared.format),

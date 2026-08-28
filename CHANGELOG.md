@@ -2,6 +2,25 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.9]
+
+### Fixed
+
+- **Pane routing follows the script's declaration — in every declaration shape.** The
+  declared `overlay` was read from two lossy sources at two different times: a raw-text
+  match over the source at prepare (blind to the positional form, fooled by comments,
+  string literals, and a plot's `force_overlay`), and the runtime context after the
+  first run (the strategy runtime drops positional declaration args, and a variable
+  argument arrives as a series rather than a boolean). Whenever the two disagreed the
+  indicator moved mid-load: `indicator("I", "i", true)` mounted its loading placeholder
+  in a sub pane and jumped to the price pane a moment later,
+  `strategy("S", "s", true)` stayed in a sub pane for good, and an `overlay=false`
+  script with a `force_overlay=true` plot flashed on the price pane before landing in
+  its own. The declaration is now read from the AST scan at prepare and pinned onto
+  every computed model, so the placeholder and the final pane agree from the first
+  mount — named and positional forms alike, `indicator()` and `strategy()` both. A
+  host's runtime `setProps({ overlay })` override still wins over the declaration.
+
 ## [v0.2.8]
 
 ### Fixed
