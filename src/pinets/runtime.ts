@@ -46,6 +46,13 @@ export interface IndicatorCache {
 export interface PineToken {
     source: string;
     instanceId: string;
+    /**
+     * The declaration's `overlay` when the AST scan resolved it to a literal (named or
+     * positional); absent for a computed/variable value. Carried on the token so
+     * {@link pineCtxToModel} can pin every computed model's pane routing to the
+     * DECLARATION — the runtime context is a lossy source for it (see there).
+     */
+    declaredOverlay?: boolean;
 }
 
 /**
@@ -84,7 +91,19 @@ export function preparePine(source: string, instanceId: string, defaultProps?: R
     const scanned = Indicator.from(source);
     const inputs = mapInputs(scanned.getInputsMeta());
     const props = propsFor(scanned, defaultProps, propsVisibility);
-    const overlay = /overlay\s*[:=]\s*true/.test(source);
+    // The declared overlay comes from the same AST scan that feeds the props schema:
+    // `scanned.prop` lays the declaration call's resolved args over the spec defaults,
+    // handling named AND positional forms and never matching comments, string literals,
+    // or a plot's `force_overlay` — the raw-source regex this replaces mis-routed all of
+    // those (`indicator("I", "i", true)` mounted its placeholder in a sub pane, then
+    // jumped to the price pane when the first computed model landed). A non-boolean scan
+    // means the script passes a variable the scanner can't resolve — keep the literal
+    // regex as the placeholder guess (word-bounded: a `my_overlay = true` assignment must
+    // not match), and leave `declaredOverlay` unset so the computed model keeps the
+    // runtime's own answer.
+    const scannedOverlay = scanned.prop.overlay;
+    const declaredOverlay = typeof scannedOverlay === 'boolean' ? scannedOverlay : undefined;
+    const overlay = declaredOverlay ?? /(?<![\w.$])overlay\s*[:=]\s*true/.test(source);
     // strategy() declares exactly like indicator() — without the alternative, every
     // strategy script showed a placeholder "Indicator" legend title until its first run.
     // The title argument comes in two shapes — positional (`indicator("X")`) and named
@@ -97,7 +116,8 @@ export function preparePine(source: string, instanceId: string, defaultProps?: R
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
-    return { language: 'pine', inputs, ...(props.length > 0 ? { props } : {}), meta: { title, overlay }, reactsToViewport, token: { source, instanceId } satisfies PineToken };
+    const token: PineToken = { source, instanceId, ...(declaredOverlay !== undefined ? { declaredOverlay } : {}) };
+    return { language: 'pine', inputs, ...(props.length > 0 ? { props } : {}), meta: { title, overlay }, reactsToViewport, token };
 }
 
 /**
@@ -166,6 +186,19 @@ export async function runPineStatic(opts: {
  */
 export function pineCtxToModel(ctx: unknown, instanceId: string, prepared: PreparedScript, inputs: Record<string, InputValue>, props: Record<string, InputValue>, anchorTime?: number): IndicatorModel {
     const { model } = toScene(normalizeContext(ctx), instanceId);
+    // Pane routing must follow the DECLARATION. Vela re-routes an indicator's pane when
+    // the first computed model's `overlay` disagrees with the prepared meta, and the
+    // runtime context is a lossy source for that flag — the strategy runtime drops
+    // positional declaration args, so `strategy("S", "s", true)` executes with
+    // `config.overlay: false` and would tear the placeholder off the price pane. The
+    // statically scanned declaration is the truth; a host's prop override
+    // (`setProps({ overlay })`, mutable per the Pine spec) is the one legitimate
+    // runtime divergence and stays on top of it.
+    const overlay = typeof props.overlay === 'boolean' ? props.overlay : (prepared.token as PineToken).declaredOverlay;
+    if (overlay !== undefined) {
+        model.overlay = overlay;
+        model.paneHint = overlay ? 'price' : 'new';
+    }
     model.inputs = prepared.inputs;
     model.inputValues = { ...defaultsOf(prepared.inputs), ...inputs };
     if (prepared.props) {
