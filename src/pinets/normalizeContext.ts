@@ -58,6 +58,22 @@ function dedupeByTime(data: PinePlotPoint[]): PinePlotPoint[] {
 }
 
 /**
+ * True when the run context carries an EXECUTED declaration. A run over ZERO bars never
+ * executes the script body — the `indicator(...)`/`strategy(...)` call included — so
+ * both `indicator` and `strategy.config` stay empty and {@link normalizeContext} would
+ * fabricate default metadata (`title: "Indicator"`, `overlay: false`). Engines use this
+ * to suppress the model emission for such runs entirely: a fabricated model reaching the
+ * host would finalize pane routing and the legend title off metadata that contradicts
+ * the static scan. Key-counting (not presence) on purpose: some PineTS versions
+ * default-initialize `indicator` to an empty object.
+ */
+export function declarationExecuted(ctx: unknown): boolean {
+    const c = (ctx ?? {}) as RawContext;
+    const root = c.fullContext ?? c;
+    return Object.keys({ ...root.indicator, ...root.strategy?.config }).length > 0;
+}
+
+/**
  * The ONE choke point for PineTS Context outer-shape drift. During streaming
  * the page `ctx.plots` is sliced and the full history lives on
  * `ctx.fullContext.plots` — so we read from `fullContext` when present.

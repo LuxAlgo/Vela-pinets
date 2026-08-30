@@ -10,7 +10,7 @@ import type {
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { InputValue, InputSchema } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
-import { normalizeContext } from './normalizeContext';
+import { normalizeContext, declarationExecuted } from './normalizeContext';
 import { toScene } from './toScene';
 import { mapInputs } from './inputsMeta';
 import { mapProps, applyProps } from './propsMeta';
@@ -28,7 +28,15 @@ import { ensurePineMarkerPatch } from './markerPatch';
 
 /** One static run's neutral result. */
 export interface PineRunResult {
-    model: IndicatorModel;
+    /**
+     * The neutral model — or null when the run never executed the script body (zero
+     * bars: empty initial load, unresolved symbol). Such a run carries no declaration,
+     * so mapping it would fabricate default metadata (`title: "Indicator"`,
+     * `overlay: false`) that contradicts the static scan and would strand the
+     * indicator's pane routing in the host. Callers emit NOTHING for a null model and
+     * let the session re-run when bars arrive.
+     */
+    model: IndicatorModel | null;
     alerts: EngineAlert[];
     warnings: EngineWarning[];
     reactsToViewport: boolean;
@@ -170,7 +178,7 @@ export async function runPineStatic(opts: {
     const reactsToViewport = typeof pine.usesVisibleRange === 'function' ? pine.usesVisibleRange() : false;
 
     return {
-        model: pineCtxToModel(ctx, instanceId, prepared, inputs, props ?? {}, bars[0]?.time),
+        model: declarationExecuted(ctx) ? pineCtxToModel(ctx, instanceId, prepared, inputs, props ?? {}, bars[0]?.time) : null,
         alerts: (ctx.alerts ?? []).map(mapAlert),
         warnings: (ctx.warnings ?? []).map(mapWarning),
         reactsToViewport,
@@ -441,6 +449,10 @@ export function openLiveStream(opts: {
     evt.on('data', (ctx) => {
         if (stopped) return;
         lastCtx = ctx;
+        // A tick that never executed the script body (a stream opened over zero bars)
+        // carries no declaration — emit nothing rather than a fabricated default model
+        // (same rule as runPineStatic's null model).
+        if (!declarationExecuted(ctx)) return;
         try {
             opts.onModel(pineCtxToModel(ctx, opts.token.instanceId, opts.prepared, opts.inputs, opts.props ?? {}, anchorTime));
         } catch (err) {

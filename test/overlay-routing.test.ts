@@ -102,7 +102,7 @@ async function runModel(source: string, props: Record<string, InputValue> = {}):
         props,
         fetchSeries: undefined,
     });
-    return res.model;
+    return res.model!; // runs over real bars — never the null (zero-bar) outcome
 }
 
 describe('computed model overlay (real PineTS run)', () => {

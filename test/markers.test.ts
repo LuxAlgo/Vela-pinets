@@ -38,7 +38,7 @@ async function runModel(source: string, bars = 6): Promise<IndicatorModel> {
         inputs: {},
         fetchSeries: undefined,
     });
-    return res.model;
+    return res.model!; // runs over real bars — never the null (zero-bar) outcome
 }
 
 const labelsOf = (model: IndicatorModel): DrawingLabel[] => model.labels ?? [];

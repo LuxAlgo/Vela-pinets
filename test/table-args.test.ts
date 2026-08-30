@@ -33,7 +33,7 @@ async function runTables(source: string): Promise<DrawingTable[]> {
         inputs: {},
         fetchSeries: undefined,
     });
-    return res.model.tables ?? [];
+    return res.model!.tables ?? []; // runs over real bars — never the null (zero-bar) outcome
 }
 
 describe('pine tables · text_formatting', () => {

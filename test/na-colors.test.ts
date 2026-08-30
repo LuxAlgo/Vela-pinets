@@ -56,7 +56,7 @@ async function runModel(source: string): Promise<IndicatorModel> {
         inputs: {},
         fetchSeries: undefined,
     });
-    return res.model;
+    return res.model!; // runs over real bars — never the null (zero-bar) outcome
 }
 
 describe('na / color(na) as plot colors (real PineTS run)', () => {

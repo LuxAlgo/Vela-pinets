@@ -92,7 +92,7 @@ describe('time_close through a real PineTS run', () => {
             inputs: {},
             fetchSeries: undefined,
         });
-        const model: IndicatorModel = res.model;
+        const model: IndicatorModel = res.model!; // runs over real bars — never the null (zero-bar) outcome
         const tc = model.series.find((s) => s.title === 'tc');
         expect(tc).toBeDefined();
         const pts = (tc as unknown as { points: Array<{ time: number; value: number | null }> }).points;

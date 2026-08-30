@@ -2,6 +2,20 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A script run before any bars exist no longer reports a made-up result.** When a
+  chart's initial data load resolves empty (a slow feed, an authentication race, an
+  unresolved symbol), the script body never executes — but the run still reported a
+  result claiming the generic "Indicator" title and a sub-pane placement, regardless
+  of what the script declared. An overlay indicator added in that window (typically
+  by a host restoring a saved layout) was torn off the price pane and stranded in an
+  empty sub pane for good. Such a run now reports nothing at all: the loading
+  placeholder stays on the declared pane with the declared title, and the first run
+  over real bars delivers the correct result. Both engines behave the same.
+
 ## [v0.2.9]
 
 ### Fixed
