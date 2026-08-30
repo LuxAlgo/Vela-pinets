@@ -1,6 +1,6 @@
 {
   "name": "@luxalgo/vela-pinets",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "PineTS scripting engine for the Vela charting library — Pine Script indicators executed in-process or in a Web Worker, plugged into Vela's public ScriptingEngine port.",
   "license": "AGPL-3.0-only",
   "author": "LuxAlgo",
