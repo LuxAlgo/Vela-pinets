@@ -137,7 +137,9 @@ async function runSession(s: Session): Promise<void> {
         for (const a of outcome.alerts) post({ kind: 'alert', sessionId: s.id, alert: a });
         for (const w of outcome.warnings) post({ kind: 'warning', sessionId: s.id, warning: w });
         s.lastCtx = outcome.ctx;
-        post({ kind: 'model', sessionId: s.id, model: outcome.model });
+        // A null model = the run never executed (zero bars): post no model, but still
+        // ack with 'done' so the main thread's pending-run bookkeeping balances.
+        if (outcome.model) post({ kind: 'model', sessionId: s.id, model: outcome.model });
         post({ kind: 'done', sessionId: s.id });
     } catch (err) {
         post({ kind: 'error', sessionId: s.id, message: err instanceof Error ? err.message : String(err) });

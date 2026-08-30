@@ -164,7 +164,9 @@ export class PineEngine implements ScriptingEngine {
                 req.prepared.reactsToViewport = outcome.reactsToViewport; // refine in place
                 for (const a of outcome.alerts) handlers.onAlert?.(a);
                 for (const w of outcome.warnings) handlers.onWarning?.(w);
-                handlers.onModel(outcome.model);
+                // A null model = the run never executed (zero bars): emit nothing — the
+                // host keeps its prepared placeholder and pokes the session when bars land.
+                if (outcome.model) handlers.onModel(outcome.model);
                 handlers.onDone?.();
             } catch (err) {
                 handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
