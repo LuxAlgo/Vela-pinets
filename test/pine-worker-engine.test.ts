@@ -284,6 +284,48 @@ describe('PineWorkerEngine (proxy)', () => {
         expect(fake.last('fetchSeriesResult')).toMatchObject({ reqId: 7, bars: secBars });
     });
 
+    it('flags a footprint source on execute and serves the worker fetchFootprints round-trip from it', async () => {
+        const fake = new FakeWorker();
+        const footprintBars = [{ openTime: 2, levels: [{ price: 100, buyVolume: 3, sellVolume: 1 }] }];
+        let asked: { symbol: string; timeframe: string; range: unknown } | null = null;
+        const engine = new PineWorkerEngine({
+            createWorker: () => fake,
+            footprints: async (symbol, timeframe, range) => ((asked = { symbol, timeframe, range }), footprintBars),
+        });
+        engine.execute(makeReq(), { onModel: () => {} });
+        expect(fake.last('execute')).toMatchObject({ footprints: true });
+
+        fake.reply({ kind: 'fetchFootprints', reqId: 9, symbol: 'BTCUSDT', timeframe: '60', range: { from: 1, limit: 2 } });
+        await flush();
+        expect(asked).toEqual({ symbol: 'BTCUSDT', timeframe: '60', range: { from: 1, limit: 2 } });
+        expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 9, bars: footprintBars });
+    });
+
+    it('without a footprint source: execute carries no flag, and a stray request answers empty', async () => {
+        const fake = new FakeWorker();
+        const engine = new PineWorkerEngine({ createWorker: () => fake });
+        engine.execute(makeReq(), { onModel: () => {} });
+        expect('footprints' in fake.last('execute')!).toBe(false);
+
+        fake.reply({ kind: 'fetchFootprints', reqId: 3, symbol: 'BTCUSDT', timeframe: '60', range: {} });
+        await flush();
+        expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 3, bars: [] });
+    });
+
+    it('relays a footprint source failure as an error result', async () => {
+        const fake = new FakeWorker();
+        const engine = new PineWorkerEngine({
+            createWorker: () => fake,
+            footprints: async () => {
+                throw new Error('order flow unavailable');
+            },
+        });
+        engine.execute(makeReq(), { onModel: () => {} });
+        fake.reply({ kind: 'fetchFootprints', reqId: 4, symbol: 'BTCUSDT', timeframe: '60', range: {} });
+        await flush();
+        expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 4, error: 'order flow unavailable' });
+    });
+
     it('refines reactsToViewport in place and routes errors', () => {
         const fake = new FakeWorker();
         const engine = new PineWorkerEngine({ createWorker: () => fake });

@@ -3,6 +3,7 @@ import { snapshotFromCtx } from '../pinets/contextSnapshot';
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { PreparedScript, ExecutionMarket, VisibleBarRange, FetchSeries } from '@luxalgo/vela/plugin';
+import type { FootprintBar, FootprintSource } from '../pinets/footprints';
 import type { MainToWorker, WorkerToMain } from './protocol';
 
 /**
@@ -50,10 +51,13 @@ interface Session {
     chain: Promise<void>;
     /** LIVE only: the persistent stream handle; null until started (deferred) and after stop. */
     stream: LiveStreamHandle | null;
+    /** The main thread's footprint source, proxied — undefined when the engine has none. */
+    footprints: FootprintSource | undefined;
 }
 
 const sessions = new Map<number, Session>();
 const pendingFetch = new Map<number, { resolve: (bars: OHLCV[]) => void; reject: (err: Error) => void }>();
+const pendingFootprints = new Map<number, { resolve: (bars: FootprintBar[]) => void; reject: (err: Error) => void }>();
 let fetchReqId = 0;
 
 /**
@@ -66,6 +70,18 @@ const fetchSeries: FetchSeries = (symbol, timeframe, range) =>
         const reqId = ++fetchReqId;
         pendingFetch.set(reqId, { resolve, reject });
         post({ kind: 'fetchSeries', reqId, symbol, timeframe, range });
+    });
+
+/**
+ * Worker-side footprint source: the same request/response pattern as `fetchSeries`,
+ * answered by the engine's `footprints` option on the main thread. PineTS awaits
+ * `getFootprintData` too, so the round-trip is transparent to the script.
+ */
+const fetchFootprints: FootprintSource = (symbol, timeframe, range) =>
+    new Promise<FootprintBar[]>((resolve, reject) => {
+        const reqId = ++fetchReqId;
+        pendingFootprints.set(reqId, { resolve, reject });
+        post({ kind: 'fetchFootprints', reqId, symbol, timeframe, range });
     });
 
 /**
@@ -107,6 +123,7 @@ function startStream(s: Session): void {
         bars: () => s.bars,
         market: () => s.market,
         fetchSeries,
+        footprints: s.footprints,
         visibleRange: s.visibleRange,
         onModel: (model) => {
             if (!s.stopped) post({ kind: 'model', sessionId: s.id, model });
@@ -131,6 +148,7 @@ async function runSession(s: Session): Promise<void> {
             inputs: s.inputs,
             props: s.props,
             fetchSeries,
+            footprints: s.footprints,
         });
         if (s.stopped) return;
         post({ kind: 'reactsToViewport', sessionId: s.id, value: outcome.reactsToViewport });
@@ -172,6 +190,7 @@ ctx.addEventListener('message', (event) => {
                 chain: Promise.resolve(),
                 stream: null,
                 lastCtx: null,
+                footprints: msg.footprints ? fetchFootprints : undefined,
             };
             sessions.set(s.id, s);
             if (s.mode === 'live') {
@@ -250,6 +269,14 @@ ctx.addEventListener('message', (event) => {
             const p = pendingFetch.get(msg.reqId);
             if (!p) return;
             pendingFetch.delete(msg.reqId);
+            if (msg.error) p.reject(new Error(msg.error));
+            else p.resolve(msg.bars ?? []);
+            return;
+        }
+        case 'fetchFootprintsResult': {
+            const p = pendingFootprints.get(msg.reqId);
+            if (!p) return;
+            pendingFootprints.delete(msg.reqId);
             if (msg.error) p.reject(new Error(msg.error));
             else p.resolve(msg.bars ?? []);
             return;
