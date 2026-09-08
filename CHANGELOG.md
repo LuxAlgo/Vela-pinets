@@ -2,6 +2,25 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Volume footprints for Pine's `request.footprint()`.** Both engines accept a
+  `footprints` option — a host-supplied `FootprintSource`
+  (`(symbol, timeframe, range) => Promise<FootprintBar[]>`) — and expose it to PineTS
+  as the optional `getFootprintData` surface of the virtual market-data provider, for
+  static runs and live streams alike. Vela owns bars, never order flow, so this is
+  how a host with a footprint-capable data source feeds the `footprint` /
+  `volume_row` API; without the option the surface is absent and
+  `request.footprint()` answers `na` on every bar, as PineTS specifies. The worker
+  engine round-trips each call to the main thread (`fetchFootprints` /
+  `fetchFootprintsResult`, the `fetchSeries` pattern), and `execute` merely flags
+  that a source exists. Chart-type modifiers are stripped before the source is asked
+  (order flow is never derived). Types `FootprintSource`, `FootprintBar`,
+  `FootprintLevel`, `FootprintRange` are exported. Requires a pinets build that
+  ships `request.footprint()` — the option is inert (and harmless) on older ones.
+
 ## [v0.2.10]
 
 ### Fixed

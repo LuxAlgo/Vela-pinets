@@ -150,6 +150,34 @@ if ta.crossover(close, ta.sma(close, 20))
 themselves. `props` gates which scripts publish the schema — `'strategy'` gives
 strategies a Properties tab while plain indicators keep an inputs-only dialog.
 
+## Volume footprints (`request.footprint()`)
+
+Vela owns bars, not order flow, so Pine's `request.footprint()` needs a host-supplied
+source of per-bar volume footprints. Pass one to either engine and it becomes the
+optional `getFootprintData` surface of the PineTS market-data provider (worker-backed
+engines round-trip each call to the main thread, like `request.security` fetches).
+Without it every `request.footprint()` call answers `na`.
+
+```ts
+import type { FootprintSource } from '@luxalgo/vela-pinets';
+
+const footprints: FootprintSource = async (symbol, timeframe, range) => {
+    // range: { from?, to?, limit? } — the loaded history first, then the forming bar's tail
+    const bars = await myOrderFlow.footprints(symbol, timeframe, range);
+    return bars.map((b) => ({
+        openTime: b.time, // the matching bar's open time
+        levels: b.levels.map((l) => ({ price: l.price, buyVolume: l.buy, sellVolume: l.sell })),
+    }));
+};
+
+const engine = new PineWorkerEngine({ footprints });
+```
+
+Levels are raw volume-at-price at whatever grid the source has (a level's `price` is
+the low edge of its bucket); PineTS re-bins them into `ticks_per_row × syminfo.mintick`
+rows and derives POC, value area and imbalances itself. Bars the source omits read as
+`na`. Requires a pinets build that ships `request.footprint()`.
+
 ## Development
 
 ```bash
