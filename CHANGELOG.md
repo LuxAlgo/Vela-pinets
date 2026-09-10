@@ -2,6 +2,14 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.11]
+
+### Changed
+
+- **Works with `@luxalgo/vela` 0.7.x.** The peer range widens from `^0.6.11` to
+  `^0.6.11 || ^0.7.0`, so a host on Vela 0.7.0 installs the engine without a peer
+  conflict. No engine behavior changes.
+
 ## [v0.2.10]
 
 ### Fixed
