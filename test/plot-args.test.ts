@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { toScene } from '../src/pinets/toScene';
+import { indicatorFor, runPineStatic, preparePine } from '../src/pinets/runtime';
 import type { PineRun, PinePlot } from '../src/pinets/PineRun';
-import type { LineLikeSeries, CandleSeries } from '@luxalgo/vela/plugin';
+import type { LineLikeSeries, CandleSeries, IndicatorModel, OHLCV } from '@luxalgo/vela/plugin';
 
 const HOUR = 3600000;
 
@@ -25,29 +26,74 @@ function onlySeries(plots: PinePlot[], overlay = false): LineLikeSeries {
     return model.series[0] as LineLikeSeries;
 }
 
+const ALL = { pane: true, priceScale: true, legend: true, dataWindow: true };
+const NONE = { pane: false, priceScale: false, legend: false, dataWindow: false };
+
 describe('toScene · display', () => {
-    it('display.status_line → hidden in the pane, points kept', () => {
+    it('display.status_line → legend only: off the pane (points kept), off the scale and data window', () => {
         const s = onlySeries([plotOf('P', [1, 2, 3], { color: '#888888', display: 'status_line' })]);
-        expect(s.visible).toBe(false);
+        expect(s.display).toEqual({ ...NONE, legend: true });
+        expect(s.visible).toBe(false); // the pane-only shorthand older Vela versions read
         expect(s.points).toHaveLength(3);
     });
 
-    it('display.price_scale → hidden, also in a study pane (overlay=false)', () => {
-        const s = onlySeries([plotOf('P', [1, 2, 3], { color: '#888888', display: 'price_scale' })], false);
+    it('display.data_window → data window only', () => {
+        const s = onlySeries([plotOf('P', [1, 2, 3], { color: '#888888', display: 'data_window' })]);
+        expect(s.display).toEqual({ ...NONE, dataWindow: true });
         expect(s.visible).toBe(false);
     });
 
-    it('display.pane / display.all / default → visible', () => {
-        for (const display of ['pane', 'all', undefined]) {
+    it('display.price_scale → on the scale but not painted, also in a study pane (overlay=false)', () => {
+        const s = onlySeries([plotOf('P', [1, 2, 3], { color: '#888888', display: 'price_scale' })], false);
+        expect(s.display).toEqual({ ...NONE, priceScale: true });
+        expect(s.visible).toBe(false);
+    });
+
+    it('display.none → nowhere', () => {
+        const s = onlySeries([plotOf('P', [1, 2, 3], { color: '#888888', display: 'none' })]);
+        expect(s.display).toEqual(NONE);
+        expect(s.visible).toBe(false);
+    });
+
+    it('display.pane → painted only; display.all / default → everywhere', () => {
+        expect(onlySeries([plotOf('P', [1, 2], { color: '#888888', display: 'pane' })]).display).toEqual({ ...NONE, pane: true });
+        for (const display of ['all', undefined]) {
             const s = onlySeries([plotOf('P', [1, 2], { color: '#888888', display })]);
+            expect(s.display).toEqual(ALL);
             expect(s.visible).toBe(true);
         }
     });
 
-    it('combined display: with pane → visible, without pane → hidden', () => {
-        // `display.pane + display.price_scale` concatenates the enum strings.
-        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'paneprice_scale' })]).visible).toBe(true);
-        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'status_lineprice_scale' })]).visible).toBe(false);
+    it('`+`-combined display (concatenated enum strings) is the union of its members', () => {
+        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'panedata_window' })]).display).toEqual({ ...NONE, pane: true, dataWindow: true });
+        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'status_lineprice_scale' })]).display).toEqual({ ...NONE, legend: true, priceScale: true });
+        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'data_windowstatus_linepane' })]).display).toEqual({ ...ALL, priceScale: false });
+        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'allprice_scale' })]).display).toEqual(ALL);
+        expect(onlySeries([plotOf('P', [1], { color: '#888888', display: 'nonepane' })]).display).toEqual({ ...NONE, pane: true });
+    });
+
+    it('an unreadable display (the NaN a PineTS without set operations yields for `display.a - display.b`) shows everywhere', () => {
+        expect(onlySeries([plotOf('Sub', [1], { color: '#888888', display: NaN })]).display).toEqual(ALL);
+        expect(onlySeries([plotOf('J', [1], { color: '#888888', display: 'sideways' })]).display).toEqual(ALL);
+    });
+
+    it('a `na` color takes the plot off the pane only — its value still reads, display.all stays on the scale', () => {
+        const s = onlySeries([plotOf('P', [1, 2], { color: 'rgba(0, 0, 0, 0)' })]);
+        expect(s.display).toEqual({ ...ALL, pane: false });
+        expect(s.visible).toBe(false);
+        expect(s.points).toHaveLength(2);
+    });
+
+    it('plotcandle / plotbar carry their display too', () => {
+        const candle: PinePlot = {
+            key: 'C', title: 'C', style: 'candle', options: { style: 'candle', display: 'data_window' },
+            data: [{ time: 0, value: [10, 12, 9, 11], options: {} }],
+        };
+        const { model } = toScene(runOf([candle], true), 'ind');
+        const s = model.series[0] as CandleSeries;
+        expect(s.kind).toBe('candle');
+        expect(s.display).toEqual({ ...NONE, dataWindow: true });
+        expect(s.visible).toBe(false);
     });
 
     it('hline display.none → no price line; display.all → price line', () => {
@@ -248,5 +294,58 @@ describe('toScene · trackprice', () => {
     it('absent (the default) → no price line', () => {
         const { model } = toScene(runOf([plotOf('P', [10, 20], { color: '#ff0000' })]), 'ind');
         expect(model.priceLines).toHaveLength(0);
+    });
+});
+
+describe('display through real PineTS (member names; `+` / `-` as set operations where pinets computes them)', () => {
+    function bars(n: number): OHLCV[] {
+        const out: OHLCV[] = [];
+        for (let i = 0; i < n; i += 1) out.push({ time: 1_700_000_000_000 + i * 60_000, open: 100 + i, high: 102 + i, low: 98 + i, close: 101 + i, volume: 1 });
+        return out;
+    }
+
+    async function run(source: string): Promise<IndicatorModel> {
+        const prepared = preparePine(source, 'd-1');
+        const ind = indicatorFor({}, source, {});
+        const res = await runPineStatic({ ind, bars: bars(4), market: { symbol: 'TEST', timeframe: '60' }, visibleRange: undefined, prepared, instanceId: 'd-1', inputs: {}, fetchSeries: undefined });
+        return res.model!;
+    }
+
+    const byTitle = (model: IndicatorModel, title: string): LineLikeSeries => model.series.find((s) => s.title === title) as LineLikeSeries;
+
+    it('maps each constant and a `+` union to its surfaces', async () => {
+        const model = await run(`//@version=6
+indicator("display", overlay = true)
+plot(close, "A", display = display.all)
+plot(close, "B", display = display.pane + display.data_window)
+plot(close, "C", display = display.status_line)
+plot(close, "D", display = display.none)
+plot(close, "E")
+`);
+        expect(byTitle(model, 'A').display).toEqual(ALL);
+        expect(byTitle(model, 'B').display).toEqual({ ...NONE, pane: true, dataWindow: true });
+        expect(byTitle(model, 'C').display).toEqual({ ...NONE, legend: true });
+        expect(byTitle(model, 'D').display).toEqual(NONE);
+        expect(byTitle(model, 'E').display).toEqual(ALL);
+    });
+
+    it('`-` and the `none` / `all` boundaries are set operations (a pinets that only concatenates shows the `-` plots everywhere)', async () => {
+        const model = await run(`//@version=6
+indicator("display minus", overlay = true)
+plot(close, "AllMinusPriceScale", display = display.all - display.price_scale)
+plot(close, "AllMinusNone", display = display.all - display.none)
+plot(close, "AllPlusNone", display = display.all + display.none)
+plot(close, "NonePlusAll", display = display.none + display.all)
+plot(close, "NoneMinusAll", display = display.none - display.all)
+`);
+        expect(byTitle(model, 'AllPlusNone').display).toEqual(ALL);
+        expect(byTitle(model, 'NonePlusAll').display).toEqual(ALL);
+        expect(byTitle(model, 'AllMinusNone').display).toEqual(ALL);
+        // pinets ≤ 0.9.33 hands NaN for `-` (native string subtraction), read as every surface;
+        // a pinets with set operations drops exactly the subtracted surfaces.
+        const minusPriceScale = byTitle(model, 'AllMinusPriceScale').display;
+        const subtracts = minusPriceScale?.priceScale === false;
+        expect(minusPriceScale).toEqual(subtracts ? { ...ALL, priceScale: false } : ALL);
+        expect(byTitle(model, 'NoneMinusAll').display).toEqual(subtracts ? NONE : ALL);
     });
 });
