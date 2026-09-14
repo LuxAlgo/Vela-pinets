@@ -2,6 +2,26 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **`display` selects where a plot shows, surface by surface.** A plot declared
+  `display.data_window` now has a row in the data window and nothing else; one declared
+  `display.status_line` shows its value beside the indicator's legend title only;
+  `display.price_scale` keeps the plot on the price scale without painting it; and
+  `display.pane` paints the plot without reporting its value anywhere. Combinations
+  with `+` are the union of their parts (`display.pane + display.data_window`), and
+  `plotcandle()` / `plotbar()` honor the argument too. A plot whose color is `na` stays
+  readable in the legend and the data window; only its paint is dropped. A plot that
+  is neither painted nor on the price scale — a data-window-only or legend-only
+  helper, a `display.none` fill anchor — no longer stretches the pane's scale. `-` works
+  as Pine defines it with a PineTS that computes display set operations (the release
+  after 0.9.33): `display.all - display.price_scale` keeps every surface but the price
+  scale, `display.none - display.all` shows nowhere. These surfaces need a `@luxalgo/vela`
+  release that carries per-surface plot display; on earlier versions an off-pane plot
+  stays hidden everywhere, as before.
+
 ## [v0.2.11]
 
 ### Changed
