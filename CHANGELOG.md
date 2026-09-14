@@ -18,9 +18,14 @@ All notable changes to Vela-pinets, newest first.
   helper, a `display.none` fill anchor — no longer stretches the pane's scale. `-` works
   as Pine defines it with a PineTS that computes display set operations (the release
   after 0.9.33): `display.all - display.price_scale` keeps every surface but the price
-  scale, `display.none - display.all` shows nowhere. These surfaces need a `@luxalgo/vela`
-  release that carries per-surface plot display; on earlier versions an off-pane plot
-  stays hidden everywhere, as before.
+  scale, `display.none - display.all` shows nowhere.
+
+### Changed
+
+- **Requires `@luxalgo/vela` 0.7.1 or later.** The per-surface plot display above
+  exists only from Vela 0.7.1, so the peer range narrows from `^0.6.11 || ^0.7.0` to
+  `^0.7.1`. _(Breaking: hosts on Vela 0.6.x or 0.7.0 must upgrade Vela to install this
+  release; on those versions an off-pane plot would otherwise stay hidden everywhere.)_
 
 ## [v0.2.11]
 
