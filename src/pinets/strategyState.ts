@@ -50,10 +50,21 @@ export function toStrategyState(raw: unknown): StrategyState | undefined {
     };
 }
 
+/** Spread an optional numeric field only when the ledger actually carries a finite value. */
+const optNum = <K extends string>(key: K, v: unknown): { [P in K]?: number } => {
+    const n = asNumber(v);
+    return n === undefined ? {} : ({ [key]: n } as { [P in K]: number });
+};
+
 /**
  * The ledger as round trips, closed first then open — the order PineTS keeps. `size` is
  * SIGNED there and carries the direction; Vela splits that into `side` + a magnitude, so
  * host code never has to know the sign convention. Malformed entries are dropped.
+ *
+ * The per-trade ledger rides along under Vela's names: `profit` → `pnl`, `commission`,
+ * and Pine's `max_drawdown` / `max_runup` (the trade's adverse / favorable excursion,
+ * commission-adjusted the way PineTS latches them) → `maxDrawdown` / `maxRunup`. Each is
+ * omitted rather than zeroed when PineTS has not set it (an open trade has no `profit`).
  */
 export function toStrategyTrades(raw: unknown): StrategyTrade[] {
     if (raw == null || typeof raw !== 'object') return [];
@@ -88,6 +99,10 @@ export function toStrategyTrades(raw: unknown): StrategyTrade[] {
                   }
                 : {}),
             open: t.status !== 'closed',
+            ...optNum('pnl', t.profit),
+            ...optNum('commission', t.commission),
+            ...optNum('maxDrawdown', t.max_drawdown),
+            ...optNum('maxRunup', t.max_runup),
         });
     }
     return out;

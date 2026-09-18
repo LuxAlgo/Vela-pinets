@@ -304,6 +304,46 @@ describe('a strategy through the addon engine driving the built Vela', () => {
         expect(chart.inspect().totals.trades).toBe(trades.length);
     }, 30_000);
 
+    it('the per-trade ledger reaches the host: pnl, commission and both excursions on every closed trade', async () => {
+        const renderer = new RecordingRenderer();
+        const chart = new Vela(
+            {} as unknown as HTMLElement,
+            { symbol: 'TEST', timeframe: '60', live: false, volume: false },
+            { renderer, engines: [new PineEngine()], dataFeed: new FixedFeed() },
+        );
+        const errors: string[] = [];
+        chart.on('indicator:error', (e) => errors.push(e.error.message));
+        // A flat per-contract commission so the ledger's cost side is non-zero and checkable.
+        const h = chart.addIndicator(STRATEGY.replace('overlay=true)', 'overlay=true, commission_type=strategy.commission.cash_per_contract, commission_value=0.25)'));
+        await chart.ready();
+        await waitFor(() => (renderer.lastTrades(h.id)?.length ?? 0) > 0 || errors.length > 0);
+        expect(errors).toEqual([]);
+
+        const trades = (await h.context(['trades']))?.trades ?? [];
+        const closed = trades.filter((t) => !t.open);
+        expect(closed.length).toBeGreaterThanOrEqual(1);
+
+        for (const t of closed) {
+            // Every field of the ledger is present on a closed round trip…
+            expect(t.pnl).toEqual(expect.any(Number));
+            expect(t.commission).toEqual(expect.any(Number));
+            expect(t.maxDrawdown).toEqual(expect.any(Number));
+            expect(t.maxRunup).toEqual(expect.any(Number));
+            // …and its numbers reconcile against the fills we can see: 0.25 per contract on
+            // each leg, and P&L net of that cost.
+            expect(t.commission).toBeCloseTo(0.25 * t.qty * 2, 6);
+            const gross = (t.side === 'long' ? t.exit!.price - t.entry.price : t.entry.price - t.exit!.price) * t.qty;
+            expect(t.pnl).toBeCloseTo(gross - t.commission!, 6);
+            // Excursions are magnitudes, and the sine's ±1 wick range guarantees each trade
+            // saw BOTH some adverse and some favorable travel from its entry.
+            expect(t.maxDrawdown).toBeGreaterThan(0);
+            expect(t.maxRunup).toBeGreaterThan(0);
+        }
+        // Still-open trades have no realized P&L yet — the field stays absent, not 0.
+        for (const t of trades.filter((t) => t.open)) expect(t.pnl).toBeUndefined();
+        chart.destroy();
+    }, 30_000);
+
     it('declaration props reach the backtest: add-time override, then a live setProps re-run', async () => {
         const renderer = new RecordingRenderer();
         const chart = new Vela(
