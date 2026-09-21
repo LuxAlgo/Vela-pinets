@@ -2,6 +2,26 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.13]
+
+### Added
+
+- **Each closed trade now reports its own ledger to the host.** The round trips a
+  strategy exposes through its execution context (`trades`) carry Pine's per-trade
+  figures under Vela's names: realized profit net of commission (`pnl`), the commission
+  charged (`commission`), and the trade's worst and best excursion from entry
+  (`maxDrawdown`, `maxRunup` — Pine's `strategy.closedtrades.max_drawdown` /
+  `max_runup`, latched from each bar's high and low). A trade that has not set a figure
+  — an open one has no realized profit yet — leaves the field absent rather than zero.
+
+### Changed
+
+- **Requires `@luxalgo/vela` 0.7.7 or later.** The per-trade ledger fields above are
+  declared on Vela's trade type only from 0.7.7, so the peer range narrows from `^0.7.1`
+  to `^0.7.7`. _(Breaking: hosts on Vela 0.7.1–0.7.6 must upgrade Vela to install this
+  release; on those versions the fields would still ride along at runtime but without
+  types.)_
+
 ## [v0.2.12]
 
 ### Added
