@@ -2,7 +2,7 @@
 
 All notable changes to Vela-pinets, newest first.
 
-## [Unreleased]
+## [v0.2.13]
 
 ### Added
 
@@ -13,7 +13,14 @@ All notable changes to Vela-pinets, newest first.
   (`maxDrawdown`, `maxRunup` — Pine's `strategy.closedtrades.max_drawdown` /
   `max_runup`, latched from each bar's high and low). A trade that has not set a figure
   — an open one has no realized profit yet — leaves the field absent rather than zero.
-  Reading the fields with types requires the Vela release that declares them.
+
+### Changed
+
+- **Requires `@luxalgo/vela` 0.7.7 or later.** The per-trade ledger fields above are
+  declared on Vela's trade type only from 0.7.7, so the peer range narrows from `^0.7.1`
+  to `^0.7.7`. _(Breaking: hosts on Vela 0.7.1–0.7.6 must upgrade Vela to install this
+  release; on those versions the fields would still ride along at runtime but without
+  types.)_
 
 ## [v0.2.12]
 
