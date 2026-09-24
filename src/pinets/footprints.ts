@@ -48,14 +48,16 @@ export interface FootprintRange {
 }
 
 /**
- * Per-bar footprints of `(symbol, timeframe)` over `range` — the chart series only,
- * plain symbol (chart-type modifiers never reach it: order flow is never derived).
+ * Per-bar footprints of `(symbol, timeframe)` over `range`, plain symbol (chart-type
+ * modifiers never reach it: order flow is never derived). Usually the chart series,
+ * but a `request.footprint()` evaluated inside `request.security()` asks for THAT
+ * context's symbol and timeframe, which may differ from the chart's.
  *
- * Call pattern (PineTS's): one call over the whole loaded history, then — whenever
- * the market data changes (a live tick, new bars) — a call from the forming bar's
- * open time onward. Returned bars REPLACE what PineTS holds for those open times, so
- * a live source just answers with its current state for the tail. Bars the source
- * cannot serve are omitted; the script reads `na` for them.
+ * Call pattern (PineTS's), per series: one call over the whole loaded history, then
+ * — whenever the market data changes (a live tick, new bars) — a call from the
+ * forming bar's open time onward. Returned bars REPLACE what PineTS holds for those
+ * open times, so a live source just answers with its current state for the tail.
+ * Bars the source cannot serve are omitted; the script reads `na` for them.
  */
 export type FootprintSource = (symbol: string, timeframe: string, range: FootprintRange) => Promise<FootprintBar[]>;
 

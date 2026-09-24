@@ -13,7 +13,9 @@ All notable changes to Vela-pinets, newest first.
   static runs and live streams alike. Vela owns bars, never order flow, so this is
   how a host with a footprint-capable data source feeds the `footprint` /
   `volume_row` API; without the option the surface is absent and
-  `request.footprint()` answers `na` on every bar, as PineTS specifies. The worker
+  `request.footprint()` answers `na` on every bar, as PineTS specifies. A
+  `request.footprint()` inside `request.security()` asks the source for that
+  context's own symbol and timeframe. The worker
   engine round-trips each call to the main thread (`fetchFootprints` /
   `fetchFootprintsResult`, the `fetchSeries` pattern), and `execute` merely flags
   that a source exists. Chart-type modifiers are stripped before the source is asked

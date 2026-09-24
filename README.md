@@ -156,7 +156,9 @@ Vela owns bars, not order flow, so Pine's `request.footprint()` needs a host-sup
 source of per-bar volume footprints. Pass one to either engine and it becomes the
 optional `getFootprintData` surface of the PineTS market-data provider (worker-backed
 engines round-trip each call to the main thread, like `request.security` fetches).
-Without it every `request.footprint()` call answers `na`.
+Without it every `request.footprint()` call answers `na`. The source is asked for the
+chart's series and, when `request.footprint()` runs inside `request.security()`, for
+that context's own symbol and timeframe.
 
 ```ts
 import type { FootprintSource } from '@luxalgo/vela-pinets';
