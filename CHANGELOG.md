@@ -20,8 +20,67 @@ All notable changes to Vela-pinets, newest first.
   `fetchFootprintsResult`, the `fetchSeries` pattern), and `execute` merely flags
   that a source exists. Chart-type modifiers are stripped before the source is asked
   (order flow is never derived). Types `FootprintSource`, `FootprintBar`,
-  `FootprintLevel`, `FootprintRange` are exported. Requires a pinets build that
-  ships `request.footprint()` — the option is inert (and harmless) on older ones.
+  `FootprintLevel`, `FootprintRange` are exported.
+
+### Changed
+
+- **Built against pinets 0.10.0.** The browser builds and the worker bundle inline
+  pinets 0.10.0, the first release with `request.footprint()`. The `pinets` peer
+  range stays `>=0.9.31`: on an older pinets the `footprints` option is inert and
+  harmless.
+
+## [v0.2.13]
+
+### Added
+
+- **Each closed trade now reports its own ledger to the host.** The round trips a
+  strategy exposes through its execution context (`trades`) carry Pine's per-trade
+  figures under Vela's names: realized profit net of commission (`pnl`), the commission
+  charged (`commission`), and the trade's worst and best excursion from entry
+  (`maxDrawdown`, `maxRunup` — Pine's `strategy.closedtrades.max_drawdown` /
+  `max_runup`, latched from each bar's high and low). A trade that has not set a figure
+  — an open one has no realized profit yet — leaves the field absent rather than zero.
+
+### Changed
+
+- **Requires `@luxalgo/vela` 0.7.7 or later.** The per-trade ledger fields above are
+  declared on Vela's trade type only from 0.7.7, so the peer range narrows from `^0.7.1`
+  to `^0.7.7`. _(Breaking: hosts on Vela 0.7.1–0.7.6 must upgrade Vela to install this
+  release; on those versions the fields would still ride along at runtime but without
+  types.)_
+
+## [v0.2.12]
+
+### Added
+
+- **`display` selects where a plot shows, surface by surface.** A plot declared
+  `display.data_window` now has a row in the data window and nothing else; one declared
+  `display.status_line` shows its value beside the indicator's legend title only;
+  `display.price_scale` keeps the plot on the price scale without painting it; and
+  `display.pane` paints the plot without reporting its value anywhere. Combinations
+  with `+` are the union of their parts (`display.pane + display.data_window`), and
+  `plotcandle()` / `plotbar()` honor the argument too. A plot whose color is `na` stays
+  readable in the legend and the data window; only its paint is dropped. A plot that
+  is neither painted nor on the price scale — a data-window-only or legend-only
+  helper, a `display.none` fill anchor — no longer stretches the pane's scale. `-` works
+  as Pine defines it with a PineTS that computes display set operations (the release
+  after 0.9.33): `display.all - display.price_scale` keeps every surface but the price
+  scale, `display.none - display.all` shows nowhere.
+
+### Changed
+
+- **Requires `@luxalgo/vela` 0.7.1 or later.** The per-surface plot display above
+  exists only from Vela 0.7.1, so the peer range narrows from `^0.6.11 || ^0.7.0` to
+  `^0.7.1`. _(Breaking: hosts on Vela 0.6.x or 0.7.0 must upgrade Vela to install this
+  release; on those versions an off-pane plot would otherwise stay hidden everywhere.)_
+
+## [v0.2.11]
+
+### Changed
+
+- **Works with `@luxalgo/vela` 0.7.x.** The peer range widens from `^0.6.11` to
+  `^0.6.11 || ^0.7.0`, so a host on Vela 0.7.0 installs the engine without a peer
+  conflict. No engine behavior changes.
 
 ## [v0.2.10]
 

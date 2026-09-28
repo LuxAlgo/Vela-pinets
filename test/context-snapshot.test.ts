@@ -35,7 +35,10 @@ const strategyCtx = {
         max_runup: 300,
         initial_capital: 10_000,
         closedtrades: [
-            { id: 't1', entry_id: 'Long', entry_price: 100, entry_time: 1, exit_id: 'Exit', exit_price: 110, exit_time: 2, exit_comment: 'take', size: 2, status: 'closed' },
+            {
+                id: 't1', entry_id: 'Long', entry_price: 100, entry_time: 1, exit_id: 'Exit', exit_price: 110, exit_time: 2, exit_comment: 'take', size: 2, status: 'closed',
+                profit: 19.5, commission: 0.5, max_drawdown: 3.25, max_runup: 22,
+            },
         ],
         opentrades: [{ id: 't2', entry_id: 'Short', entry_price: 120, entry_time: 3, size: -1, status: 'open' }],
     },
@@ -90,9 +93,21 @@ describe('snapshotFromCtx', () => {
     it('trades become round trips: a signed size splits into side + magnitude', () => {
         const s = snapshotFromCtx(strategyCtx, 'streaming');
         expect(s.trades).toEqual([
-            { id: 't1', side: 'long', qty: 2, entry: { id: 'Long', time: 1, price: 100 }, exit: { id: 'Exit', time: 2, price: 110, comment: 'take' }, open: false },
+            {
+                id: 't1', side: 'long', qty: 2, entry: { id: 'Long', time: 1, price: 100 }, exit: { id: 'Exit', time: 2, price: 110, comment: 'take' }, open: false,
+                // Pine's per-trade ledger under Vela's names: profit → pnl, max_drawdown/max_runup → maxDrawdown/maxRunup.
+                pnl: 19.5, commission: 0.5, maxDrawdown: 3.25, maxRunup: 22,
+            },
+            // The open trade set none of them — they stay absent, never zeroed.
             { id: 't2', side: 'short', qty: 1, entry: { id: 'Short', time: 3, price: 120 }, open: true },
         ]);
+    });
+
+    it('a non-finite ledger value is dropped rather than forwarded', () => {
+        const ctxNaN = { ...strategyCtx, strategy: { ...strategyCtx.strategy, opentrades: [{ ...strategyCtx.strategy.opentrades[0], profit: NaN, max_drawdown: 1.5 }] } };
+        const open = snapshotFromCtx(ctxNaN, 'streaming').trades!.find((t) => t.id === 't2')!;
+        expect(open.pnl).toBeUndefined();
+        expect(open.maxDrawdown).toBe(1.5);
     });
 
     it('snapshots are copies — mutating them never touches the source', () => {

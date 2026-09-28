@@ -1,6 +1,6 @@
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
-import type { SeriesSpec, SeriesPoint, LineLikeKind, LineLikeStyle, LineStyle, CandleSeries, CandleBarColor } from '@luxalgo/vela/plugin';
+import type { SeriesSpec, SeriesPoint, LineLikeKind, LineLikeStyle, LineStyle, CandleSeries, CandleBarColor, SeriesDisplay } from '@luxalgo/vela/plugin';
 import type { Fill, FillGradientStop, Background, PriceLine } from '@luxalgo/vela/plugin';
 import type { DrawingLine, DrawingBox, DrawingLabel, DrawingPolyline, DrawingLinefill, DrawingTable } from '@luxalgo/vela/plugin';
 import type { TradeExecution } from '@luxalgo/vela/plugin';
@@ -213,18 +213,21 @@ function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: stri
     // `force_overlay=true` → the series renders on the price pane whatever pane
     // the indicator routes to (plot/plotcandle/plotbar record it in the options).
     const overlay = plot.options.force_overlay === true ? { overlay: true } : {};
+    // `visible` mirrors the pane flag for Vela versions that predate per-surface `display`.
+    const declared = parseDisplay(plot.options.display);
     if (cls === 'candle' || cls === 'bar') {
-        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot, showLastStart(plot.data.length, showLast)), ...overlay };
+        const spec: CandleSeries = { id, title, paneId: 'unrouted', kind: cls, bars: toOhlcBars(plot, showLastStart(plot.data.length, showLast)), visible: declared.pane, display: declared, ...overlay };
         const barColors = toCandleBarColors(plot);
         if (barColors) spec.barColors = barColors;
         return spec;
     }
     const kind = cls;
     const repColor = normColor(representativeColor(plot));
-    // Hidden = declared off-pane (a `display` without the pane flag: none,
-    // data_window, status_line, price_scale) or a `na` color. Kept as a series
-    // (with points) so it can still anchor a fill().
-    const hidden = !displayIncludesPane(plot.options.display) || !repColor;
+    // A `na` color paints nothing, whatever the display says — the plot keeps its
+    // other surfaces (its value still reads in the legend / data window, and a
+    // `display.all` plot stays on the price scale). Kept as a series (with points)
+    // so it can still anchor a fill().
+    const display: SeriesDisplay = { ...declared, pane: declared.pane && !!repColor };
     const width = asNumber(plot.options.linewidth) ?? 1;
     const connected = kind === 'line' || kind === 'step' || kind === 'area';
     const points = applyOffset(applyShowLast(toPoints(plot), showLast, connected), asNumber(plot.options.offset));
@@ -232,19 +235,37 @@ function toSeries(cls: LineLikeKind | 'candle' | 'bar', plot: PinePlot, id: stri
     // `histbase` re-bases the styles that grow from a reference level.
     const base = asNumber(plot.options.histbase);
     if (base !== undefined && (kind === 'histogram' || kind === 'columns' || kind === 'area')) style.base = base;
-    return { id, title, paneId: 'unrouted', kind, points, style, visible: !hidden, ...overlay };
+    return { id, title, paneId: 'unrouted', kind, points, style, visible: display.pane, display, ...overlay };
 }
 
+const DISPLAY_ALL: Required<SeriesDisplay> = { pane: true, priceScale: true, legend: true, dataWindow: true };
+
+/** Pine member name → Vela surface (Pine's status line is the indicator legend); `all` and `none` are handled apart. */
+const DISPLAY_SURFACE = { pane: 'pane', data_window: 'dataWindow', status_line: 'legend', price_scale: 'priceScale' } as const;
+const DISPLAY_TOKENS = ['all', 'none', 'pane', 'data_window', 'status_line', 'price_scale'] as const;
+
 /**
- * Pine `display.*` arrives as the enum's plain string ('all', 'none', 'pane',
- * 'data_window', 'price_scale', 'status_line'); a `+`-combined argument
- * concatenates the parts. A plot paints in the pane only when its display
- * includes the pane — `display.all` (the default) or `display.pane`; a
- * status-line / price-scale / data-window-only plot stays off-chart.
+ * Pine's `display` argument as Vela surfaces. PineTS hands the member names, with a
+ * combined display as their concatenation ('all' / 'none' for the full / empty set,
+ * 'panedata_window' for `display.pane + display.data_window`). Absent — or anything
+ * unreadable, such as the `NaN` a PineTS without display set operations yields for
+ * `display.a - display.b` — means every surface: a plot must not vanish over it.
  */
+function parseDisplay(v: unknown): Required<SeriesDisplay> {
+    if (typeof v !== 'string') return { ...DISPLAY_ALL };
+    const out: Required<SeriesDisplay> = { pane: false, priceScale: false, legend: false, dataWindow: false };
+    for (let i = 0; i < v.length; ) {
+        const tok = DISPLAY_TOKENS.find((t) => v.startsWith(t, i));
+        if (!tok || tok === 'all') return { ...DISPLAY_ALL };
+        if (tok !== 'none') out[DISPLAY_SURFACE[tok]] = true;
+        i += tok.length;
+    }
+    return out;
+}
+
+/** Whether a non-series Pine element (fill, bgcolor, barcolor, markers, hline) paints in the pane. */
 function displayIncludesPane(v: unknown): boolean {
-    const s = asString(v);
-    return s === undefined || s.includes('all') || s.includes('pane');
+    return parseDisplay(v).pane;
 }
 
 /** First data index inside a Pine `show_last` window (0 = no trimming). */

@@ -120,10 +120,11 @@ describe('toScene · linestyle / display', () => {
         expect(model.priceLines[0]!.lineStyle).toBe('dashed');
     });
 
-    it('display.data_window → series kept but hidden (anchor only)', () => {
+    it('display.data_window → series kept off the pane (an anchor with a data-window row)', () => {
         const p = linePlot('Helper', [{ v: 1 }, { v: 2 }], { color: '#888888', display: 'data_window' });
         const { model } = toScene(run([p]), 'ind');
         expect(model.series).toHaveLength(1);
         expect(model.series[0]!.visible).toBe(false);
+        expect(model.series[0]!.display).toEqual({ pane: false, priceScale: false, legend: false, dataWindow: true });
     });
 });
