@@ -39,7 +39,7 @@
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.0.0",
-    "pinets": "^0.9.32",
+    "pinets": "^0.10.0",
     "tsup": "^8.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.0.0",

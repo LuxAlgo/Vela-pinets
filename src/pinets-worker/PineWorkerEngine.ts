@@ -12,6 +12,7 @@ import type { BarRange } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
 import type { PropsFilter } from '../pinets/runtime';
+import type { FootprintRange, FootprintSource } from '../pinets/footprints';
 import workerCode from 'inline-worker:./worker.ts';
 
 export interface PineWorkerOptions {
@@ -40,6 +41,14 @@ export interface PineWorkerOptions {
      * source/spec values, and `setProps` still applies.
      */
     props?: PropsFilter;
+    /**
+     * Per-bar volume footprints for Pine's `request.footprint()`. Vela owns bars, not
+     * order flow, so a host with a footprint-capable data source supplies this; the
+     * worker exposes it to PineTS as its provider's optional `getFootprintData`
+     * surface and round-trips each call here (the source runs on the main thread,
+     * like `fetchSeries`). Absent ≡ `request.footprint()` answers `na` on every bar.
+     */
+    footprints?: FootprintSource;
 }
 
 /**
@@ -89,6 +98,7 @@ export class PineWorkerEngine implements ScriptingEngine {
     private readonly spawn: () => WorkerLike;
     private readonly defaultProps: Record<string, InputValue> | undefined;
     private readonly propsVisibility: PropsFilter | undefined;
+    private readonly footprints: FootprintSource | undefined;
     private readonly prepares = new Map<number, { resolve: (p: PreparedScript) => void; reject: (e: Error) => void }>();
     private readonly sessions = new Map<number, SessionEntry>();
     private reqId = 0;
@@ -99,6 +109,7 @@ export class PineWorkerEngine implements ScriptingEngine {
         this.spawn = opts.createWorker ?? ((): WorkerLike => spawnWorker(opts.workerUrl));
         this.defaultProps = opts.defaultProps;
         this.propsVisibility = opts.props;
+        this.footprints = opts.footprints;
     }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
@@ -133,6 +144,7 @@ export class PineWorkerEngine implements ScriptingEngine {
             visibleRange: req.visibleRange,
             mode,
             historyState: req.historyState,
+            ...(this.footprints ? { footprints: true as const } : {}),
         };
         // Live messages never enter the pending-run bookkeeping — the stream acks nothing.
         if (mode === 'live') this.post(msg);
@@ -273,6 +285,9 @@ export class PineWorkerEngine implements ScriptingEngine {
             case 'fetchSeries':
                 void this.serveFetch(msg.reqId, msg.symbol, msg.timeframe, msg.range);
                 return;
+            case 'fetchFootprints':
+                void this.serveFootprints(msg.reqId, msg.symbol, msg.timeframe, msg.range);
+                return;
             case 'contextResult': {
                 const waiter = this.contextWaits.get(msg.reqId);
                 this.contextWaits.delete(msg.reqId);
@@ -297,6 +312,23 @@ export class PineWorkerEngine implements ScriptingEngine {
             this.post({ kind: 'fetchSeriesResult', reqId, bars: await fetchSeries(symbol, timeframe, range) });
         } catch (err) {
             this.post({ kind: 'fetchSeriesResult', reqId, error: err instanceof Error ? err.message : String(err) });
+        }
+    }
+
+    /**
+     * Answer a worker's footprint request from the engine's `footprints` option. The
+     * worker only asks when `execute` flagged a source, so a missing one here is a
+     * host bug — answer empty rather than hang the script's await.
+     */
+    private async serveFootprints(reqId: number, symbol: string, timeframe: string, range: FootprintRange): Promise<void> {
+        if (!this.footprints) {
+            this.post({ kind: 'fetchFootprintsResult', reqId, bars: [] });
+            return;
+        }
+        try {
+            this.post({ kind: 'fetchFootprintsResult', reqId, bars: await this.footprints(symbol, timeframe, range) });
+        } catch (err) {
+            this.post({ kind: 'fetchFootprintsResult', reqId, error: err instanceof Error ? err.message : String(err) });
         }
     }
 }

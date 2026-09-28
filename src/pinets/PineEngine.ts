@@ -19,6 +19,7 @@ import {
     type PineToken,
     type PropsFilter,
 } from './runtime';
+import type { FootprintSource } from './footprints';
 
 /** The prepared token plus the in-process Indicator cache (reused across re-runs/ticks). */
 type PineSession = PineToken & IndicatorCache;
@@ -42,6 +43,13 @@ export interface PineEngineOptions {
      * source/spec values, and `setProps` still applies.
      */
     props?: PropsFilter;
+    /**
+     * Per-bar volume footprints for Pine's `request.footprint()`. Vela owns bars, not
+     * order flow, so a host with a footprint-capable data source supplies this; the
+     * engine exposes it to PineTS as its provider's optional `getFootprintData`
+     * surface. Absent ≡ `request.footprint()` answers `na` on every bar.
+     */
+    footprints?: FootprintSource;
 }
 
 /**
@@ -56,10 +64,12 @@ export class PineEngine implements ScriptingEngine {
     readonly capabilities: EngineCapabilities = { streaming: true, visibleRange: true, inputs: true, props: true };
     private readonly defaultProps: Record<string, InputValue> | undefined;
     private readonly propsVisibility: PropsFilter;
+    private readonly footprints: FootprintSource | undefined;
 
     constructor(opts: PineEngineOptions = {}) {
         this.defaultProps = opts.defaultProps;
         this.propsVisibility = opts.props ?? 'all';
+        this.footprints = opts.footprints;
     }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
@@ -91,6 +101,7 @@ export class PineEngine implements ScriptingEngine {
                     bars: getBars,
                     market: () => req.market,
                     fetchSeries: req.fetchSeries,
+                    footprints: this.footprints,
                     visibleRange,
                     onModel: (m) => {
                         if (!stopped) handlers.onModel(m);
@@ -157,6 +168,7 @@ export class PineEngine implements ScriptingEngine {
                     inputs,
                     props,
                     fetchSeries: req.fetchSeries,
+                    footprints: this.footprints,
                 });
                 if (stopped) return;
                 lastCtx = outcome.ctx;
