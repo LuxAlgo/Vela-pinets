@@ -2,7 +2,7 @@
 
 All notable changes to Vela-pinets, newest first.
 
-## [Unreleased]
+## [v0.2.14]
 
 ### Added
 
@@ -28,6 +28,9 @@ All notable changes to Vela-pinets, newest first.
   pinets 0.10.0, the first release with `request.footprint()`. The `pinets` peer
   range stays `>=0.9.31`: on an older pinets the `footprints` option is inert and
   harmless.
+- **Supports `@luxalgo/vela` 0.8.** The peer range widens from `^0.7.7` to
+  `^0.7.7 || ^0.8.0`, so hosts on Vela 0.8 install this release without a peer
+  conflict, and hosts on 0.7.7 or later keep working unchanged.
 
 ## [v0.2.13]
 
