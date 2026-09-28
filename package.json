@@ -31,11 +31,11 @@
     "playground": "vite"
   },
   "peerDependencies": {
-    "@luxalgo/vela": "^0.7.7",
+    "@luxalgo/vela": "^0.7.7 || ^0.8.0",
     "pinets": ">=0.9.31"
   },
   "devDependencies": {
-    "@luxalgo/vela": "^0.7.7",
+    "@luxalgo/vela": "^0.8.0",
     "@types/node": "^26.1.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.0.0",
