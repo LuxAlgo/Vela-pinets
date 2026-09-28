@@ -126,7 +126,7 @@ describe('force_overlay mapping (real PineTS run)', () => {
         // its anchors are forced): the blue band between the two forced lines carries
         // the flag, the red band between the plain lines does not.
         expect(model.linefills).toHaveLength(2);
-        const forcedFill = model.linefills!.find((lf) => lf.color?.startsWith('#2196F3'));
+        const forcedFill = model.linefills!.find((lf) => lf.color?.startsWith('#2962FF'));
         const plainFill = model.linefills!.find((lf) => lf.color?.startsWith('#F23645'));
         expect(forcedFill?.overlay).toBe(true);
         expect(plainFill?.overlay).toBe(false);

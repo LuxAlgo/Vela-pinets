@@ -16,6 +16,7 @@ import { mapInputs } from './inputsMeta';
 import { mapProps, applyProps } from './propsMeta';
 import { ensurePineTablePatch } from './tablePatch';
 import { ensurePineMarkerPatch } from './markerPatch';
+import { footprintSurface, type FootprintSource, type FootprintSurface } from './footprints';
 
 /**
  * The transport-agnostic PineTS runtime: parse a script, run it once over bars,
@@ -155,8 +156,10 @@ export async function runPineStatic(opts: {
     inputs: Record<string, InputValue>;
     props?: Record<string, InputValue>;
     fetchSeries: FetchSeries | undefined;
+    /** Host order-flow source behind `request.footprint()`; absent ≡ the call answers `na`. */
+    footprints?: FootprintSource;
 }): Promise<PineRunResult> {
-    const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries } = opts;
+    const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries, footprints } = opts;
     ensurePineTablePatch();
     ensurePineMarkerPatch();
     const klines = toKlines(bars, market.timeframe, market.symbolInfo);
@@ -164,10 +167,13 @@ export async function runPineStatic(opts: {
     // owns), but route any OTHER (symbol, timeframe) — i.e. request.security HTF/LTF/
     // cross-symbol — back to Vela's cache-backed gateway. PineTS reuses this same
     // provider for its secondary contexts, so MTF data is real and timeframe-separated.
+    // Footprints ride the same object as PineTS's optional `getFootprintData` surface,
+    // present only when the host supplied a source.
     const source = {
         getMarketData: (sym?: string, tf?: string, limit?: number, sDate?: number, eDate?: number) =>
             isChartSeries(sym, tf, market) ? Promise.resolve(klines) : secondaryKlines(fetchSeries, sym, tf, limit, sDate, eDate, syminfoForSymbol(market, sym)),
         getSymbolInfo: async (sym?: string) => syminfoForSymbol(market, sym),
+        ...footprintSurface(footprints, () => market.symbol, () => market.timeframe),
     };
     const pine = new PineTS(source as never, chartTickerOf(market), market.timeframe, klines.length);
     await pine.ready();
@@ -351,7 +357,7 @@ export async function secondaryKlines(
 }
 
 /** The streaming provider a live PineTS session polls (see {@link makeLiveProvider}). */
-export interface LiveProvider {
+export interface LiveProvider extends FootprintSurface {
     markDirty(): void;
     getMarketData(ticker: string, tf: string, limit?: number, sDate?: number, eDate?: number): Promise<unknown[]>;
     getSymbolInfo(ticker?: string): Promise<Record<string, unknown>>;
@@ -366,11 +372,14 @@ export interface LiveProvider {
  * poll for the tail, where an EMPTY result means "no change — skip execution".
  * Shared by the in-process live engine and the worker's streaming session (the
  * only difference is how `getBars` is backed: a closure vs a message-fed array).
+ * `footprints` (optional) becomes the provider's `getFootprintData` surface — the
+ * stream re-reads the forming bar's footprint whenever its OHLCV signature moves.
  */
-export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => ExecutionMarket, fetchSeries: FetchSeries | undefined): LiveProvider {
+export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => ExecutionMarket, fetchSeries: FetchSeries | undefined, footprints?: FootprintSource): LiveProvider {
     let lastKey = '';
     let dirty = false;
     return {
+        ...footprintSurface(footprints, () => getMarket().symbol, () => getMarket().timeframe),
         markDirty: () => {
             dirty = true;
         },
@@ -423,6 +432,8 @@ export function openLiveStream(opts: {
     bars: () => OHLCV[];
     market: () => ExecutionMarket;
     fetchSeries?: FetchSeries;
+    /** Host order-flow source behind `request.footprint()`; absent ≡ the call answers `na`. */
+    footprints?: FootprintSource;
     visibleRange?: VisibleBarRange;
     onModel(model: IndicatorModel): void;
     onAlert?(alert: EngineAlert): void;
@@ -437,7 +448,7 @@ export function openLiveStream(opts: {
     // pageSize = full length: the initial drain must emit ONE complete model (a smaller
     // page would mount a partial one); ≥1 so an empty array can't zero the page size.
     const initialLen = Math.max(1, bars.length);
-    const provider = makeLiveProvider(opts.bars, opts.market, opts.fetchSeries);
+    const provider = makeLiveProvider(opts.bars, opts.market, opts.fetchSeries, opts.footprints);
     const pine = new PineTS(provider as never, chartTickerOf(opts.market()), opts.market().timeframe, initialLen);
     if (opts.visibleRange) pine.setVisibleRange(opts.visibleRange.left, opts.visibleRange.right);
     const evt = pine.stream(ind, { live: true, interval: 1000, pageSize: initialLen }) as {

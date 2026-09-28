@@ -2,6 +2,36 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.14]
+
+### Added
+
+- **Volume footprints for Pine's `request.footprint()`.** Both engines accept a
+  `footprints` option — a host-supplied `FootprintSource`
+  (`(symbol, timeframe, range) => Promise<FootprintBar[]>`) — and expose it to PineTS
+  as the optional `getFootprintData` surface of the virtual market-data provider, for
+  static runs and live streams alike. Vela owns bars, never order flow, so this is
+  how a host with a footprint-capable data source feeds the `footprint` /
+  `volume_row` API; without the option the surface is absent and
+  `request.footprint()` answers `na` on every bar, as PineTS specifies. A
+  `request.footprint()` inside `request.security()` asks the source for that
+  context's own symbol and timeframe. The worker
+  engine round-trips each call to the main thread (`fetchFootprints` /
+  `fetchFootprintsResult`, the `fetchSeries` pattern), and `execute` merely flags
+  that a source exists. Chart-type modifiers are stripped before the source is asked
+  (order flow is never derived). Types `FootprintSource`, `FootprintBar`,
+  `FootprintLevel`, `FootprintRange` are exported.
+
+### Changed
+
+- **Built against pinets 0.10.0.** The browser builds and the worker bundle inline
+  pinets 0.10.0, the first release with `request.footprint()`. The `pinets` peer
+  range stays `>=0.9.31`: on an older pinets the `footprints` option is inert and
+  harmless.
+- **Supports `@luxalgo/vela` 0.8.** The peer range widens from `^0.7.7` to
+  `^0.7.7 || ^0.8.0`, so hosts on Vela 0.8 install this release without a peer
+  conflict, and hosts on 0.7.7 or later keep working unchanged.
+
 ## [v0.2.13]
 
 ### Added
