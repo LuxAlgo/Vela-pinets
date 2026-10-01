@@ -58,6 +58,16 @@ is a peer rather than a dependency for the same reason the browser build maps it
 onto `window.Vela` — a second copy would duplicate the SDK registries, not just the
 bytes. The worker avoids a second *pinets* by inlining its own at build time.
 
+That last point is worth stating as a consequence, because it is easy to read the
+install line above and expect otherwise: the `pinets` you install resolves for
+`PineEngine`. `PineWorkerEngine` runs the copy inlined when *this* package was
+built, so upgrading or patching `pinets` in your own `node_modules` changes the
+main-thread engine and leaves the worker exactly as it was — with no error, and
+no difference visible anywhere except in what the worker actually does. If you
+need a particular `pinets` inside the worker, rebuild this package against it, or
+hand `PineWorkerEngine` a worker you built yourself through `workerUrl` /
+`createWorker`.
+
 ## Quick start
 
 Register the engine, then add a script. The language is `pine`, so calls that omit
