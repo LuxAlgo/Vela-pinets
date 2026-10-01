@@ -2,6 +2,27 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.15]
+
+### Fixed
+
+- **Opaque `rgb()` colors whose blue channel is 0 were treated as transparent.**
+  `color.rgb(255, 0, 0)` (pure red), `color.rgb(255, 255, 0)` (yellow),
+  `color.rgb(0, 255, 0)` and black reached the model as "no color", because the
+  fully-transparent check read the last number of `rgb(r, g, b)` as an alpha. Plots
+  painted with them were dropped, a bar-by-bar red/green plot disappeared entirely,
+  and the same colors lost their fills, backgrounds, bar colors, lines, boxes and
+  label fills. Only `rgba(…, 0)` — an actual alpha of 0 — is hidden now.
+
+### Changed
+
+- **Built against pinets 0.11.0.** The browser builds and the worker bundle inline
+  pinets 0.11.0, which brings its TradingView-parity fixes (strings and number
+  formatting, drawing lifecycle, arrays, strategy order sizing and fills, colors) to
+  both engines. The `pinets` peer range stays `>=0.9.31`.
+- **Built against `@luxalgo/vela` 0.8.1.** The peer range
+  `^0.7.7 || ^0.8.0` already covers it and is unchanged.
+
 ## [v0.2.14]
 
 ### Added

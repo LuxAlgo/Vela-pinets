@@ -11,8 +11,8 @@ export function isVisibleColor(color: unknown): color is string {
     // #RRGGBBAA with AA === 00 → invisible
     const hex8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})$/.exec(s);
     if (hex8 && parseInt(hex8[1] ?? 'ff', 16) === 0) return false;
-    // rgba(…, 0)
-    if (/rgba?\([^)]*,\s*0(?:\.0+)?\s*\)$/.test(s)) return false;
+    // rgba(…, 0) → invisible. rgb() carries no alpha — its last channel is blue.
+    if (/^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(s)) return false;
     return true;
 }
 
