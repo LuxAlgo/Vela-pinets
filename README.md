@@ -2,18 +2,26 @@
 
 <div align="center">
 
-  <img src=".github/banner.png" alt="Vela PineTS — Pine Script indicators and strategies for Vela" width="100%">
+  <a href="https://velacharts.dev/pine-script/">
+    <img src=".github/banner.png" alt="Vela PineTS: Pine Script® indicators and strategies on Vela" width="100%">
+  </a>
 
-  <p><strong>Pine Script indicators and strategies for Vela.</strong><br>
-  In-process · Web Worker · Vela's public ScriptingEngine port</p>
+# Vela PineTS
+
+  <p><strong>Run Pine Script® indicators and strategies on Vela.</strong><br>
+  In-process or in a Web Worker · strategy fills on the chart · Vela's public ScriptingEngine port</p>
+
+  <p><sub>The Pine Script® addon for the open-source core of <a href="https://vela.luxalgo.com/chart">Vela</a>, the charting platform by LuxAlgo, powered by <a href="https://docs.luxalgo.com/developers/pinets">PineTS</a>.</sub></p>
 
   [![npm version][npm-version-img]][npm-link]
   [![Downloads][npm-downloads-img]][npm-link]
   [![License][license-img]][license-link]
 
   <p>
-    <a href="https://github.com/LuxAlgo/Vela">Vela</a> ·
+    <a href="https://velacharts.dev/pine-script/">Homepage</a> ·
     <a href="#quick-start">Quick start</a> ·
+    <a href="https://docs.luxalgo.com/vela/user/scripting-engines">Documentation</a> ·
+    <a href="https://github.com/LuxAlgo/Vela">Vela</a> ·
     <a href="CHANGELOG.md">Changelog</a> ·
     <a href="#license">License</a>
   </p>
@@ -22,14 +30,15 @@
 
 <!-- markdownlint-enable no-inline-html -->
 
-Vela PineTS is the Pine Script addon for [Vela](https://github.com/LuxAlgo/Vela). It
-runs `indicator()` and `strategy()` scripts through Vela's public `ScriptingEngine`
-port — in-process (`PineEngine`) or off the main thread (`PineWorkerEngine`). A
+Vela PineTS runs native Pine Script® v5 and v6 on [Vela's open-source core](https://github.com/LuxAlgo/Vela).
+Paste an `indicator()` or `strategy()` script as you would write it anywhere else: it
+executes through Vela's public `ScriptingEngine` port, in-process (`PineEngine`) or off
+the main thread (`PineWorkerEngine`), with no conversion step. A
 `strategy()` script also emits its broker-emulator order fills as
 `IndicatorModel.trades`, which Vela paints as on-chart trade markers.
 
-Vela itself ships no scripting engine and stays Apache-2.0. This package is
-**AGPL-3.0** because the [PineTS](https://github.com/LuxAlgo/PineTS) runtime it
+Vela's open-source core ships no scripting engine and stays Apache-2.0. This package
+is **AGPL-3.0** because the [PineTS](https://github.com/LuxAlgo/PineTS) runtime it
 executes is.
 
 ## What's in the box
@@ -102,7 +111,7 @@ new VelaWorkspace('#chart', {
 Host tooling can execute-and-inject safely with `chart.runIndicator(source)`
 (structured errors, no dead legend rows) and read a running script's state,
 including its **return value**, via `handle.context()` (read-only snapshots,
-worker-safe). See Vela's [scripting engines](https://github.com/LuxAlgo/Vela/blob/dev/docs/user/scripting-engines.md)
+worker-safe). See Vela's [scripting engines](https://docs.luxalgo.com/vela/user/scripting-engines)
 guide.
 
 ### Browser bundle
@@ -200,7 +209,13 @@ Vela is consumed as `file:../Vela` (built dist): clone this repo next to
 
 Vela PineTS is licensed under the **GNU Affero General Public License v3.0**
 (see [LICENSE](LICENSE)) because it depends on `pinets`, which is AGPL-3.0.
-The Vela charting library itself is Apache-2.0 and carries no Pine code.
+Vela's open-source core is Apache-2.0 and carries no Pine code. Shipping Pine Script®
+in a closed-source product? See the commercial options on
+[velacharts.dev/pricing](https://velacharts.dev/pricing/).
+
+Pine Script® is a trademark of TradingView, Inc. Vela PineTS and PineTS are
+independently developed by LuxAlgo and are not affiliated with or endorsed by
+TradingView.
 
 [npm-version-img]: https://img.shields.io/npm/v/%40luxalgo%2Fvela-pinets.svg
 [npm-downloads-img]: https://img.shields.io/npm/dm/%40luxalgo%2Fvela-pinets.svg
