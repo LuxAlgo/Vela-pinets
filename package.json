@@ -5,6 +5,15 @@
   "license": "AGPL-3.0-only",
   "author": "LuxAlgo",
   "repository": "https://github.com/LuxAlgo/Vela-pinets",
+  "homepage": "https://velacharts.dev/pine-script/",
+  "keywords": [
+    "pine-script",
+    "pinets",
+    "vela",
+    "charting",
+    "indicators",
+    "luxalgo"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

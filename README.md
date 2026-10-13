@@ -11,7 +11,7 @@
   <p><strong>Run Pine Script® indicators and strategies on Vela.</strong><br>
   In-process or in a Web Worker · strategy fills on the chart · Vela's public ScriptingEngine port</p>
 
-  <p><sub>The Pine Script® addon for the open-source core of <a href="https://vela.luxalgo.com/chart">Vela</a>, the charting platform by LuxAlgo, powered by <a href="https://docs.luxalgo.com/developers/pinets">PineTS</a>.</sub></p>
+  <p><sub>The Pine Script® addon for the open-source core of <a href="https://vela.luxalgo.com/chart">Vela</a>, the next-generation charting platform by <a href="https://www.luxalgo.com/">LuxAlgo</a>, powered by <a href="https://docs.luxalgo.com/developers/pinets">PineTS</a>.</sub></p>
 
   [![npm version][npm-version-img]][npm-link]
   [![Downloads][npm-downloads-img]][npm-link]
