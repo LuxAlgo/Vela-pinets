@@ -2,6 +2,14 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.16]
+
+### Changed
+
+- **Built against `@luxalgo/vela` 0.8.4.** The worker bundle carries the few Vela values
+  it uses from this release. The peer range `^0.7.7 || ^0.8.0` already covers it and is
+  unchanged.
+
 ## [v0.2.15]
 
 ### Fixed
