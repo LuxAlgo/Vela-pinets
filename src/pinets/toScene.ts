@@ -354,12 +354,31 @@ function inferIntervalMs(items: ReadonlyArray<{ time: number }>): number {
     return diffs[diffs.length >> 1] ?? 0;
 }
 
-/** Pine `offset` shifts a plot N bars (negative = left/past). Re-time each point by N×interval. */
+/** Time of bar slot `i` over `bars`: the bar's own time, extrapolated by `interval` past either end. */
+function slotTime(bars: ReadonlyArray<{ time: number }>, i: number, interval: number): number {
+    if (i < 0) return bars[0]!.time + i * interval;
+    const last = bars.length - 1;
+    return i <= last ? bars[i]!.time : bars[last]!.time + (i - last) * interval;
+}
+
+/**
+ * Pine `offset` shifts a plot N bars (negative = left/past). Vela draws series points by
+ * index, so the values move N slots, each re-timed to the slot it lands on: a forward shift
+ * leaves N leading gaps and continues N points past the last bar (a Vela that cannot draw
+ * there ignores them), a backward shift drops the first N values and leaves N trailing gaps.
+ */
 function applyOffset(points: SeriesPoint[], offset: number | undefined): SeriesPoint[] {
-    if (!offset) return points;
-    const shift = offset * inferIntervalMs(points);
-    if (!shift) return points;
-    return points.map((p) => ({ ...p, time: p.time + shift }));
+    const n = Math.trunc(offset ?? 0);
+    if (!n || points.length === 0) return points;
+    const interval = inferIntervalMs(points);
+    const len = points.length + Math.max(0, n);
+    const out = new Array<SeriesPoint>(len);
+    for (let slot = 0; slot < len; slot += 1) {
+        const time = slotTime(points, slot, interval);
+        const src = points[slot - n];
+        out[slot] = src ? { ...src, time } : { time, value: null };
+    }
+    return out;
 }
 
 function toOhlcBars(plot: PinePlot, firstIdx = 0): OHLCV[] {
@@ -499,8 +518,8 @@ function toBackgrounds(plot: PinePlot, title: string, instanceId: string, ids: I
  *    NOTHING on `0`/`na` bars.
  */
 function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): DrawingLabel[] {
-    const offset = asNumber(plot.options.offset);
-    const shift = offset ? offset * inferIntervalMs(plot.data) : 0;
+    const offset = Math.trunc(asNumber(plot.options.offset) ?? 0);
+    const interval = offset ? inferIntervalMs(plot.data) : 0;
     const isChar = plot.style === 'char' || plot.options.char !== undefined;
     // plotarrow never sets a plot-level `shape` (plotshape ALWAYS stamps the key,
     // even for its default style); its points carry the pixel-height carryover.
@@ -531,7 +550,7 @@ function markersToLabels(plot: PinePlot, instanceId: string, ids: IdentityMap): 
             id: ids.next(instanceId, 'label', `${plot.key}#${out.length}`),
             paneId: 'unrouted',
             xloc: 'bar_time',
-            x: d.time + shift,
+            x: offset ? slotTime(plot.data, i + offset, interval) : d.time,
             y: isNum ? v : 0, // bool (e.g. squeeze) at location.absolute → the zero line
             yloc: markerYLoc(asString(opts.location) ?? asString(plot.options.location)),
             // A char glyph is the marker itself: text-only label, `text` under it.

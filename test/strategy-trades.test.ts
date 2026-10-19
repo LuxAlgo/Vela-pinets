@@ -291,12 +291,13 @@ describe('a strategy through the addon engine driving the built Vela', () => {
         for (const x of exits) expect(entryIds.has(x.tradeId)).toBe(true);
 
         // Broker semantics: a market order fills at the NEXT bar's open — every
-        // execution sits exactly on a chart bar, at that bar's open price.
+        // execution sits exactly on a chart bar, at that bar's open price snapped to
+        // the 0.01 tick (the sine bars open between ticks).
         const barAt = new Map(BARS.map((b) => [b.time, b]));
         for (const t of trades) {
             const bar = barAt.get(t.time)!;
             expect(bar).toBeDefined();
-            expect(t.price).toBeCloseTo(bar.open, 6);
+            expect(t.price).toBeCloseTo(Math.round(bar.open * 100) / 100, 6);
         }
 
         // The oracle's deterministic signal counts them too.
