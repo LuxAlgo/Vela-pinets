@@ -2,6 +2,19 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **`plot()` offsets had no visible effect.** A plot with an `offset` drew on the same
+  bars as an unshifted one, so `offset=-10` and `offset=10` plots of the same series
+  overlapped. Plots now move by the given number of bars. On a `@luxalgo/vela` release
+  that draws plots past the latest candle (the next one after 0.8.4), a forward offset
+  keeps drawing into the empty space on the right; earlier releases draw it up to the
+  latest candle. `plotshape()`, `plotchar()` and `plotarrow()` markers with
+  an `offset` now move by whole bars too, so they stay on the right bar across session
+  gaps.
+
 ## [v0.2.16]
 
 ### Changed
