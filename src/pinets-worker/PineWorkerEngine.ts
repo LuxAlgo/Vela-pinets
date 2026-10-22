@@ -11,7 +11,7 @@ import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { BarRange } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
-import type { PropsFilter } from '../pinets/runtime';
+import type { PineLibraryImport, PineLibraryResolver, PropsFilter } from '../pinets/runtime';
 import type { FootprintRange, FootprintSource } from '../pinets/footprints';
 import workerCode from 'inline-worker:./worker.ts';
 
@@ -49,6 +49,13 @@ export interface PineWorkerOptions {
      * like `fetchSeries`). Absent ≡ `request.footprint()` answers `na` on every bar.
      */
     footprints?: FootprintSource;
+    /**
+     * Where the libraries of `import <user>/<library>/<version>` statements come from.
+     * Runs on the main thread: the worker asks it at prepare for each library a script
+     * imports (and theirs); a script importing a library it does not know fails to
+     * prepare, naming the import. Absent ≡ a script with an `import` fails to run.
+     */
+    importResolver?: PineLibraryResolver;
 }
 
 /**
@@ -99,6 +106,7 @@ export class PineWorkerEngine implements ScriptingEngine {
     private readonly defaultProps: Record<string, InputValue> | undefined;
     private readonly propsVisibility: PropsFilter | undefined;
     private readonly footprints: FootprintSource | undefined;
+    private readonly importResolver: PineLibraryResolver | undefined;
     private readonly prepares = new Map<number, { resolve: (p: PreparedScript) => void; reject: (e: Error) => void }>();
     private readonly sessions = new Map<number, SessionEntry>();
     private reqId = 0;
@@ -110,6 +118,7 @@ export class PineWorkerEngine implements ScriptingEngine {
         this.defaultProps = opts.defaultProps;
         this.propsVisibility = opts.props;
         this.footprints = opts.footprints;
+        this.importResolver = opts.importResolver;
     }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
@@ -123,6 +132,7 @@ export class PineWorkerEngine implements ScriptingEngine {
                 instanceId,
                 ...(this.defaultProps ? { defaultProps: this.defaultProps } : {}),
                 ...(this.propsVisibility ? { propsVisibility: this.propsVisibility } : {}),
+                ...(this.importResolver ? { importResolver: true as const } : {}),
             });
         });
     }
@@ -288,6 +298,9 @@ export class PineWorkerEngine implements ScriptingEngine {
             case 'fetchFootprints':
                 void this.serveFootprints(msg.reqId, msg.symbol, msg.timeframe, msg.range);
                 return;
+            case 'resolveImport':
+                void this.serveImport(msg.reqId, msg.path, msg.info);
+                return;
             case 'contextResult': {
                 const waiter = this.contextWaits.get(msg.reqId);
                 this.contextWaits.delete(msg.reqId);
@@ -329,6 +342,17 @@ export class PineWorkerEngine implements ScriptingEngine {
             this.post({ kind: 'fetchFootprintsResult', reqId, bars: await this.footprints(symbol, timeframe, range) });
         } catch (err) {
             this.post({ kind: 'fetchFootprintsResult', reqId, error: err instanceof Error ? err.message : String(err) });
+        }
+    }
+
+    /** Answer a worker's library request from the engine's `importResolver` (null: unknown library). */
+    private async serveImport(reqId: number, path: string, info: PineLibraryImport): Promise<void> {
+        const resolver = this.importResolver;
+        try {
+            const source = !resolver ? null : typeof resolver === 'function' ? await resolver(path, info) : await resolver.resolve(path, info);
+            this.post({ kind: 'resolveImportResult', reqId, source: source ?? null });
+        } catch (err) {
+            this.post({ kind: 'resolveImportResult', reqId, error: err instanceof Error ? err.message : String(err) });
         }
     }
 }

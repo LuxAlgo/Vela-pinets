@@ -3,7 +3,7 @@ import type { InputValue } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import type { BarRange } from '@luxalgo/vela/plugin';
 import type { PreparedScript, ExecutionMarket, VisibleBarRange, EngineAlert, EngineWarning, ContextSelect, EngineContextSnapshot } from '@luxalgo/vela/plugin';
-import type { PropsFilter } from '../pinets/runtime';
+import type { PineLibraryImport, PropsFilter } from '../pinets/runtime';
 import type { FootprintBar, FootprintRange } from '../pinets/footprints';
 
 /**
@@ -16,11 +16,22 @@ import type { FootprintBar, FootprintRange } from '../pinets/footprints';
  * `fetchSeries` call becomes a request/response pair (the worker asks, the main
  * thread — which owns the cache + network — answers). The engine's `footprints`
  * source follows the same pattern: `execute` only flags that one exists, and each
- * `getFootprintData` call PineTS makes round-trips as `fetchFootprints`.
+ * `getFootprintData` call PineTS makes round-trips as `fetchFootprints`. So does the
+ * engine's `importResolver`: `prepare` flags it, and each library the script imports is
+ * asked for as `resolveImport`; the sources then travel on the prepared token.
  */
 
 export type MainToWorker =
-    | { kind: 'prepare'; reqId: number; source: string; instanceId: string; defaultProps?: Record<string, InputValue>; propsVisibility?: PropsFilter }
+    | {
+          kind: 'prepare';
+          reqId: number;
+          source: string;
+          instanceId: string;
+          defaultProps?: Record<string, InputValue>;
+          propsVisibility?: PropsFilter;
+          /** The engine holds an import resolver — the worker asks it for each imported library. */
+          importResolver?: true;
+      }
     | {
           kind: 'execute';
           sessionId: number;
@@ -48,7 +59,8 @@ export type MainToWorker =
     | { kind: 'getContext'; sessionId: number; reqId: number; select?: ContextSelect }
     | { kind: 'stop'; sessionId: number }
     | { kind: 'fetchSeriesResult'; reqId: number; bars?: OHLCV[]; error?: string }
-    | { kind: 'fetchFootprintsResult'; reqId: number; bars?: FootprintBar[]; error?: string };
+    | { kind: 'fetchFootprintsResult'; reqId: number; bars?: FootprintBar[]; error?: string }
+    | { kind: 'resolveImportResult'; reqId: number; source?: string | null; error?: string };
 
 export type WorkerToMain =
     | { kind: 'prepared'; reqId: number; prepared?: PreparedScript; error?: string }
@@ -60,7 +72,8 @@ export type WorkerToMain =
     | { kind: 'reactsToViewport'; sessionId: number; value: boolean }
     | { kind: 'contextResult'; reqId: number; snapshot: EngineContextSnapshot | null }
     | { kind: 'fetchSeries'; reqId: number; symbol: string; timeframe: string; range: BarRange }
-    | { kind: 'fetchFootprints'; reqId: number; symbol: string; timeframe: string; range: FootprintRange };
+    | { kind: 'fetchFootprints'; reqId: number; symbol: string; timeframe: string; range: FootprintRange }
+    | { kind: 'resolveImport'; reqId: number; path: string; info: PineLibraryImport };
 
 /** Minimal Worker surface the proxy needs — the real `Worker` satisfies it; tests inject a fake. */
 export interface WorkerLike {

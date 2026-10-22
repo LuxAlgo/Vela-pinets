@@ -6,6 +6,8 @@
 export { PineEngine } from './pinets/PineEngine';
 export type { PineEngineOptions } from './pinets/PineEngine';
 export type { PropsVisibility, PropsFilter } from './pinets/runtime';
+// The `importResolver` option of both engines: where `import user/library/version` sources come from.
+export type { PineLibraryResolver, PineLibraryImport } from './pinets/runtime';
 // The host-facing order-flow seam behind Pine's `request.footprint()` (both engines'
 // `footprints` option): the shapes PineTS consumes, declared here so hosts type
 // against this package alone.

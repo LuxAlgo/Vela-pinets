@@ -1,4 +1,4 @@
-import { PineTS, Indicator } from 'pinets';
+import { PineTS, Indicator, MapImportResolver, resolveImports } from 'pinets';
 import type {
     PreparedScript,
     ExecutionMarket,
@@ -62,6 +62,64 @@ export interface PineToken {
      * DECLARATION — the runtime context is a lossy source for it (see there).
      */
     declaredOverlay?: boolean;
+    /**
+     * The sources of the libraries the script imports (and theirs), keyed by import path
+     * (`user/library/version`), resolved once at prepare. Plain strings, so they cross the
+     * worker boundary with the token; every run links them from here and never asks the
+     * resolver again. Absent when the script imports nothing or the engine has no resolver.
+     */
+    libraries?: Record<string, string>;
+}
+
+/** A library import as the resolver receives it (the shape PineTS passes). */
+export interface PineLibraryImport {
+    /** `user/library/version`, as written in the import statement. */
+    path: string;
+    user: string;
+    /** The library's name: the title of its `library()` declaration. */
+    name: string;
+    version: number;
+    /** Path of the library holding the import; undefined for the script itself. */
+    importer?: string;
+}
+
+/**
+ * Where the libraries of `import <user>/<library>/<version>` statements come from: a
+ * function returning a library's Pine source, or null for a library it does not know.
+ * Any PineTS import resolver (an object with `resolve(path, info)`) works as well.
+ */
+export type PineLibraryResolver =
+    | ((path: string, info: PineLibraryImport) => string | null | undefined | Promise<string | null | undefined>)
+    | { resolve(path: string, info: PineLibraryImport): Promise<string | null> };
+
+const IMPORT_STATEMENT = /^[ \t]*import[ \t]+[^\s/]+\/[^\s/]+\/\d+/m;
+
+/**
+ * Fetch the sources of the libraries `source` imports, and theirs, through `resolver`.
+ * Undefined when there is nothing to link. Throws, naming the import, when the resolver
+ * does not know a library the script itself imports.
+ */
+export async function resolveLibraries(source: string, resolver: PineLibraryResolver | undefined): Promise<Record<string, string> | undefined> {
+    if (!resolver || !IMPORT_STATEMENT.test(source)) return undefined;
+    const fn = typeof resolver === 'function' ? resolver : (path: string, info: PineLibraryImport) => resolver.resolve(path, info);
+    const libraries = await resolveImports(source, fn);
+    return Object.keys(libraries).length > 0 ? libraries : undefined;
+}
+
+const linkers = new WeakMap<Record<string, string>, InstanceType<typeof MapImportResolver>>();
+
+/**
+ * The PineTS resolver serving a token's libraries. One per libraries object: an Indicator
+ * re-links (re-transpiles) when it runs with a resolver serving other sources, so every
+ * run of a session must see the same one.
+ */
+function linkerFor(libraries: Record<string, string>): InstanceType<typeof MapImportResolver> {
+    let linker = linkers.get(libraries);
+    if (!linker) {
+        linker = new MapImportResolver({ libraries });
+        linkers.set(libraries, linker);
+    }
+    return linker;
 }
 
 /**
@@ -97,7 +155,37 @@ function propsFor(scanned: InstanceType<typeof Indicator>, defaultProps: Record<
  *  gates which scripts publish the schema — and which entries (default: every script,
  *  every mutable prop). */
 export function preparePine(source: string, instanceId: string, defaultProps?: Record<string, InputValue>, propsVisibility: PropsFilter = 'all'): PreparedScript {
+    return prepareScanned(Indicator.from(source), source, instanceId, defaultProps, propsVisibility, undefined);
+}
+
+/**
+ * {@link preparePine} for a script that may import libraries: they are fetched through
+ * `resolver` first, so inputs declared with an imported enum scan with their options, and
+ * carried on the token for the runs. Rejects when the script imports a library the
+ * resolver does not know.
+ */
+export async function preparePineWithLibraries(
+    source: string,
+    instanceId: string,
+    defaultProps: Record<string, InputValue> | undefined,
+    propsVisibility: PropsFilter = 'all',
+    resolver: PineLibraryResolver | undefined,
+): Promise<PreparedScript> {
+    const libraries = await resolveLibraries(source, resolver);
+    if (!libraries) return preparePine(source, instanceId, defaultProps, propsVisibility);
     const scanned = Indicator.from(source);
+    await scanned.resolveImports(linkerFor(libraries));
+    return prepareScanned(scanned, source, instanceId, defaultProps, propsVisibility, libraries);
+}
+
+function prepareScanned(
+    scanned: InstanceType<typeof Indicator>,
+    source: string,
+    instanceId: string,
+    defaultProps: Record<string, InputValue> | undefined,
+    propsVisibility: PropsFilter,
+    libraries: Record<string, string> | undefined,
+): PreparedScript {
     const inputs = mapInputs(scanned.getInputsMeta());
     const props = propsFor(scanned, defaultProps, propsVisibility);
     // The declared overlay comes from the same AST scan that feeds the props schema:
@@ -125,7 +213,7 @@ export function preparePine(source: string, instanceId: string, defaultProps?: R
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
-    const token: PineToken = { source, instanceId, ...(declaredOverlay !== undefined ? { declaredOverlay } : {}) };
+    const token: PineToken = { source, instanceId, ...(declaredOverlay !== undefined ? { declaredOverlay } : {}), ...(libraries ? { libraries } : {}) };
     return { language: 'pine', inputs, ...(props.length > 0 ? { props } : {}), meta: { title, overlay }, reactsToViewport, token };
 }
 
@@ -176,6 +264,8 @@ export async function runPineStatic(opts: {
         ...footprintSurface(footprints, () => market.symbol, () => market.timeframe),
     };
     const pine = new PineTS(source as never, chartTickerOf(market), market.timeframe, klines.length);
+    const libraries = (prepared.token as PineToken).libraries;
+    if (libraries) pine.setImportResolver(linkerFor(libraries));
     await pine.ready();
     // Feed the chart viewport so `chart.left/right_visible_bar_time` resolve to the
     // visible window; a no-op for scripts that don't reference those built-ins.
@@ -450,6 +540,7 @@ export function openLiveStream(opts: {
     const initialLen = Math.max(1, bars.length);
     const provider = makeLiveProvider(opts.bars, opts.market, opts.fetchSeries, opts.footprints);
     const pine = new PineTS(provider as never, chartTickerOf(opts.market()), opts.market().timeframe, initialLen);
+    if (opts.token.libraries) pine.setImportResolver(linkerFor(opts.token.libraries));
     if (opts.visibleRange) pine.setVisibleRange(opts.visibleRange.left, opts.visibleRange.right);
     const evt = pine.stream(ind, { live: true, interval: 1000, pageSize: initialLen }) as {
         on(e: string, cb: (arg: unknown) => void): void;
