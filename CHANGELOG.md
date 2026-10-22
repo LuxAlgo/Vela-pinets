@@ -2,6 +2,15 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.2.18]
+
+### Changed
+
+- **Works with `@luxalgo/vela` 0.9.** The peer range is now `^0.7.7 || ^0.8.0 || ^0.9.0`,
+  so the engine installs next to Vela 0.9 without a peer conflict. Nothing else changes:
+  scripts run, plot and report exactly as before, and the earlier Vela releases stay
+  supported.
+
 ## [v0.2.17]
 
 ### Changed
