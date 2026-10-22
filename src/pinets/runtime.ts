@@ -92,7 +92,7 @@ export type PineLibraryResolver =
     | ((path: string, info: PineLibraryImport) => string | null | undefined | Promise<string | null | undefined>)
     | { resolve(path: string, info: PineLibraryImport): Promise<string | null> };
 
-const IMPORT_STATEMENT = /^[ \t]*import[ \t]+[\w-]+\/[\w-]+\/\d+/m;
+const IMPORT_STATEMENT = /^[ \t]*import[ \t]+[^\s/]+\/[^\s/]+\/\d+/m;
 
 /**
  * Fetch the sources of the libraries `source` imports, and theirs, through `resolver`.
