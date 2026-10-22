@@ -2,6 +2,23 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.3.0]
+
+### Added
+
+- **Scripts can import Pine libraries.** Both engines take an `importResolver` option
+  that returns a library's Pine source for an import path (`user/library/version`). It is
+  asked once, when the script is prepared, for every library the script imports and the
+  libraries those import; the worker-backed engine asks it on the main thread. Inputs
+  declared with an imported enum list that enum's options in the settings dialog. A script
+  importing a library the resolver does not know fails to prepare, with an error naming
+  the import.
+
+### Changed
+
+- **Requires PineTS 0.13.0.** The `pinets` peer range is now `>=0.13.0`, the first PineTS
+  release that links imported libraries, and the worker bundle carries PineTS 0.13.0.
+
 ## [v0.2.18]
 
 ### Changed
