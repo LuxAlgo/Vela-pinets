@@ -1,4 +1,14 @@
-import { preparePine, indicatorFor, runPineStatic, openLiveStream, type IndicatorCache, type PineToken, type LiveStreamHandle } from '../pinets/runtime';
+import {
+    preparePineWithLibraries,
+    indicatorFor,
+    runPineStatic,
+    openLiveStream,
+    type IndicatorCache,
+    type PineLibraryImport,
+    type PineLibraryResolver,
+    type PineToken,
+    type LiveStreamHandle,
+} from '../pinets/runtime';
 import { snapshotFromCtx } from '../pinets/contextSnapshot';
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
@@ -58,6 +68,7 @@ interface Session {
 const sessions = new Map<number, Session>();
 const pendingFetch = new Map<number, { resolve: (bars: OHLCV[]) => void; reject: (err: Error) => void }>();
 const pendingFootprints = new Map<number, { resolve: (bars: FootprintBar[]) => void; reject: (err: Error) => void }>();
+const pendingImports = new Map<number, { resolve: (source: string | null) => void; reject: (err: Error) => void }>();
 let fetchReqId = 0;
 
 /**
@@ -82,6 +93,18 @@ const fetchFootprints: FootprintSource = (symbol, timeframe, range) =>
         const reqId = ++fetchReqId;
         pendingFootprints.set(reqId, { resolve, reject });
         post({ kind: 'fetchFootprints', reqId, symbol, timeframe, range });
+    });
+
+/**
+ * Worker-side import resolver: the engine's resolver is a main-thread function, so each
+ * library a script imports round-trips there, like `fetchSeries`.
+ */
+const resolveImport: PineLibraryResolver = (path: string, info: PineLibraryImport) =>
+    new Promise<string | null>((resolve, reject) => {
+        const reqId = ++fetchReqId;
+        pendingImports.set(reqId, { resolve, reject });
+        const { user, name, version, importer } = info;
+        post({ kind: 'resolveImport', reqId, path, info: { path, user, name, version, ...(importer ? { importer } : {}) } });
     });
 
 /**
@@ -168,11 +191,10 @@ ctx.addEventListener('message', (event) => {
     const msg = event.data as MainToWorker;
     switch (msg.kind) {
         case 'prepare':
-            try {
-                post({ kind: 'prepared', reqId: msg.reqId, prepared: preparePine(msg.source, msg.instanceId, msg.defaultProps, msg.propsVisibility) });
-            } catch (err) {
-                post({ kind: 'prepared', reqId: msg.reqId, error: err instanceof Error ? err.message : String(err) });
-            }
+            preparePineWithLibraries(msg.source, msg.instanceId, msg.defaultProps, msg.propsVisibility, msg.importResolver ? resolveImport : undefined).then(
+                (prepared) => post({ kind: 'prepared', reqId: msg.reqId, prepared }),
+                (err: unknown) => post({ kind: 'prepared', reqId: msg.reqId, error: err instanceof Error ? err.message : String(err) }),
+            );
             return;
         case 'execute': {
             const s: Session = {
@@ -279,6 +301,14 @@ ctx.addEventListener('message', (event) => {
             pendingFootprints.delete(msg.reqId);
             if (msg.error) p.reject(new Error(msg.error));
             else p.resolve(msg.bars ?? []);
+            return;
+        }
+        case 'resolveImportResult': {
+            const p = pendingImports.get(msg.reqId);
+            if (!p) return;
+            pendingImports.delete(msg.reqId);
+            if (msg.error) p.reject(new Error(msg.error));
+            else p.resolve(msg.source ?? null);
             return;
         }
     }

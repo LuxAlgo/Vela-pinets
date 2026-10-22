@@ -10,12 +10,13 @@ import type {
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import {
-    preparePine,
+    preparePineWithLibraries,
     indicatorFor,
     runPineStatic,
     openLiveStream,
     type LiveStreamHandle,
     type IndicatorCache,
+    type PineLibraryResolver,
     type PineToken,
     type PropsFilter,
 } from './runtime';
@@ -50,6 +51,13 @@ export interface PineEngineOptions {
      * surface. Absent ≡ `request.footprint()` answers `na` on every bar.
      */
     footprints?: FootprintSource;
+    /**
+     * Where the libraries of `import <user>/<library>/<version>` statements come from.
+     * Asked at prepare for each library a script imports (and theirs); a script importing
+     * a library it does not know fails to prepare, naming the import. Absent ≡ a script
+     * with an `import` fails to run.
+     */
+    importResolver?: PineLibraryResolver;
 }
 
 /**
@@ -65,15 +73,17 @@ export class PineEngine implements ScriptingEngine {
     private readonly defaultProps: Record<string, InputValue> | undefined;
     private readonly propsVisibility: PropsFilter;
     private readonly footprints: FootprintSource | undefined;
+    private readonly importResolver: PineLibraryResolver | undefined;
 
     constructor(opts: PineEngineOptions = {}) {
         this.defaultProps = opts.defaultProps;
         this.propsVisibility = opts.props ?? 'all';
         this.footprints = opts.footprints;
+        this.importResolver = opts.importResolver;
     }
 
     prepare(source: string, instanceId: string): Promise<PreparedScript> {
-        return Promise.resolve(preparePine(source, instanceId, this.defaultProps, this.propsVisibility));
+        return preparePineWithLibraries(source, instanceId, this.defaultProps, this.propsVisibility, this.importResolver);
     }
 
     execute(req: ExecutionRequest, handlers: ExecutionHandlers): ExecutionSession {
