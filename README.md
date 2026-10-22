@@ -189,6 +189,29 @@ the low edge of its bucket); PineTS re-bins them into `ticks_per_row × syminfo.
 rows and derives POC, value area and imbalances itself. Bars the source omits read as
 `na`. Requires a pinets build that ships `request.footprint()`.
 
+## Libraries (`import`)
+
+Scripts may import Pine libraries (`import user/library/version as alias`). The engine
+does not download them: pass an `importResolver` that returns a library's Pine source
+for its import path, or `null` for a library it does not know. Either engine asks it
+when a script is prepared, for every library the script imports and the libraries those
+import; the worker-backed engine runs it on the main thread. The sources then travel
+with the prepared script, so its runs never ask again.
+
+```ts
+import type { PineLibraryResolver } from '@luxalgo/vela-pinets';
+
+const importResolver: PineLibraryResolver = async (path, { user, name, version }) => {
+    const res = await fetch(`/pine-libraries/${user}/${name}/${version}.pine`);
+    return res.ok ? res.text() : null;
+};
+
+const engine = new PineWorkerEngine({ importResolver });
+```
+
+A script importing a library the resolver does not know fails to prepare, with an error
+naming the import. Without a resolver, a script with an `import` fails to run.
+
 ## Development
 
 ```bash
