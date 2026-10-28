@@ -2,6 +2,19 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.3.1]
+
+### Changed
+
+- **The worker bundle carries PineTS 0.13.1.** Scripts in the worker-backed engine pick up
+  its fixes: a function returning a field chain, a history series in an `else if`
+  condition, daily, weekly and monthly periods on markets whose trading day opens the
+  evening before, the close time of the forming bar on live ticks, and the v5 `when`
+  argument of the strategy order commands. Large scripts also prepare faster. The `pinets`
+  peer range stays `>=0.13.0`, so the in-process engine runs whichever PineTS the host
+  installs; upgrade it to 0.13.1 for the same fixes there. Built against `@luxalgo/vela`
+  0.9.1.
+
 ## [v0.3.0]
 
 ### Added
