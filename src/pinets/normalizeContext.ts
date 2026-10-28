@@ -1,5 +1,5 @@
 import type { PineRun, PinePlot, PinePlotPoint, PineRunMeta, PineTrade } from './PineRun';
-import { asString, asNumber } from './PineRun';
+import { asString, asNumber, UNTITLED_TITLE } from './PineRun';
 
 /** Loose view of the raw PineTS Context (only what we read). */
 interface RawContext {
@@ -89,8 +89,10 @@ export function normalizeContext(ctx: unknown): PineRun {
     // always stop at the defaults object and never reach the real declaration.
     const declared: Record<string, unknown> = { ...root.indicator, ...root.strategy?.config };
 
+    // A blank title would leave the legend row with nothing to show or hover.
+    const title = asString(declared.title);
     const meta: PineRunMeta = {
-        title: asString(declared.title) ?? 'Indicator',
+        title: title === undefined ? 'Indicator' : title.trim() ? title : UNTITLED_TITLE,
         overlay: asBool(declared.overlay) ?? false,
         precision: asNumber(declared.precision),
         shorttitle: asString(declared.shorttitle),

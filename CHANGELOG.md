@@ -2,6 +2,17 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Fixed
+
+- **A script's short title labels it on the chart.** A script that declares one
+  (`indicator("Moving Average Ribbon", shorttitle = "MAR")`) now shows it on its legend row
+  and in its settings-dialog header; the full title stays everywhere else.
+- **A script with an empty title is named "Study".** `indicator("")` and `strategy("")`
+  used to be added with a blank legend row, which left nothing to hover, so their
+  settings and remove controls could not be reached.
+
 ## [v0.3.1]
 
 ### Changed
