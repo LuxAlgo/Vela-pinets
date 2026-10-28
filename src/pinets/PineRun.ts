@@ -54,6 +54,9 @@ export interface PineRun {
     trades?: PineTrade[];
 }
 
+/** The name a script goes by when it declares a blank title (`indicator("")`). */
+export const UNTITLED_TITLE = 'Study';
+
 export function asString(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
 }

@@ -12,6 +12,7 @@ import type { InputValue, InputSchema } from '@luxalgo/vela/plugin';
 import type { IndicatorModel } from '@luxalgo/vela/plugin';
 import { normalizeContext, declarationExecuted } from './normalizeContext';
 import { toScene } from './toScene';
+import { UNTITLED_TITLE } from './PineRun';
 import { mapInputs } from './inputsMeta';
 import { mapProps, applyProps } from './propsMeta';
 import { ensurePineTablePatch } from './tablePatch';
@@ -209,7 +210,7 @@ function prepareScanned(
     // for the script's whole first compute. Anchored to a line start so a commented-out
     // declaration above the real one can never win.
     const declared = /^\s*(?:indicator|strategy)\s*\(\s*(?:title\s*=\s*)?(["'])((?:\\.|(?!\1).)*)\1/m.exec(source)?.[2];
-    const title = declared?.replace(/\\(.)/g, '$1').trim() || 'Indicator';
+    const title = declared === undefined ? 'Indicator' : declared.replace(/\\(.)/g, '$1').trim() || UNTITLED_TITLE;
     // Statically detect viewport dependence so the orchestrator can route:
     // viewport-dependent scripts keep the (debounced) full-run path; others stream.
     const reactsToViewport = /chart\.(left|right)_visible_bar(_time)?\b/.test(source);
