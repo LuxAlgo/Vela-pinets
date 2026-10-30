@@ -90,6 +90,19 @@ describe('snapshotFromCtx', () => {
         });
     });
 
+    it("carries the run's growth, risk ratios and buy-and-hold benchmark under Vela's names", () => {
+        const figures = { cagr: 14.2, sharpe_ratio: 0.81, sortino_ratio: 1.37, buy_and_hold_pnl: 520.5, buy_and_hold_per_gain: 5.205, strategy_outperformance: -20.5 };
+        const s = snapshotFromCtx({ ...strategyCtx, strategy: { ...strategyCtx.strategy, ...figures } }, 'idle');
+        expect(s.strategy).toMatchObject({ cagr: 14.2, sharpe: 0.81, sortino: 1.37, buyHoldPnl: 520.5, buyHoldPct: 5.205, outperformance: -20.5 });
+    });
+
+    it('a figure PineTS could not compute (NaN) is left out, not reported as a number', () => {
+        // No trade ever opened: no entry to anchor buy and hold on. A wiped-out account: no CAGR.
+        const s = snapshotFromCtx({ ...strategyCtx, strategy: { ...strategyCtx.strategy, cagr: NaN, sharpe_ratio: 0, buy_and_hold_pnl: NaN, buy_and_hold_per_gain: NaN, strategy_outperformance: NaN } }, 'idle');
+        expect(s.strategy!.sharpe).toBe(0);
+        for (const key of ['cagr', 'sortino', 'buyHoldPnl', 'buyHoldPct', 'outperformance'] as const) expect(s.strategy).not.toHaveProperty(key);
+    });
+
     it('trades become round trips: a signed size splits into side + magnitude', () => {
         const s = snapshotFromCtx(strategyCtx, 'streaming');
         expect(s.trades).toEqual([

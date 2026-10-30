@@ -23,13 +23,30 @@ interface RawStrategy {
     max_drawdown?: unknown;
     max_runup?: unknown;
     initial_capital?: unknown;
+    cagr?: unknown;
+    sharpe_ratio?: unknown;
+    sortino_ratio?: unknown;
+    buy_and_hold_pnl?: unknown;
+    buy_and_hold_per_gain?: unknown;
+    strategy_outperformance?: unknown;
     opentrades?: unknown[];
     closedtrades?: unknown[];
 }
 
 const num = (v: unknown): number => asNumber(v) ?? 0;
 
-/** The broker summary at the last computed bar. Null when the script declared no strategy. */
+/** Spread an optional numeric field only when the ledger actually carries a finite value. */
+const optNum = <K extends string>(key: K, v: unknown): { [P in K]?: number } => {
+    const n = asNumber(v);
+    return n === undefined ? {} : ({ [key]: n } as { [P in K]: number });
+};
+
+/**
+ * The broker summary at the last computed bar. Null when the script declared no strategy.
+ * The figures PineTS computes over the whole run — CAGR, Sharpe / Sortino and the
+ * buy-and-hold benchmark — ride along under Vela's names, omitted when PineTS left them
+ * unset or NaN (too short a run, no trade to anchor the benchmark on).
+ */
 export function toStrategyState(raw: unknown): StrategyState | undefined {
     if (raw == null || typeof raw !== 'object') return undefined;
     const s = raw as RawStrategy;
@@ -47,14 +64,14 @@ export function toStrategyState(raw: unknown): StrategyState | undefined {
         maxDrawdown: num(s.max_drawdown),
         maxRunup: num(s.max_runup),
         initialCapital: num(s.initial_capital),
+        ...optNum('cagr', s.cagr),
+        ...optNum('sharpe', s.sharpe_ratio),
+        ...optNum('sortino', s.sortino_ratio),
+        ...optNum('buyHoldPnl', s.buy_and_hold_pnl),
+        ...optNum('buyHoldPct', s.buy_and_hold_per_gain),
+        ...optNum('outperformance', s.strategy_outperformance),
     };
 }
-
-/** Spread an optional numeric field only when the ledger actually carries a finite value. */
-const optNum = <K extends string>(key: K, v: unknown): { [P in K]?: number } => {
-    const n = asNumber(v);
-    return n === undefined ? {} : ({ [key]: n } as { [P in K]: number });
-};
 
 /**
  * The ledger as round trips, closed first then open — the order PineTS keeps. `size` is

@@ -2,6 +2,26 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.3.2]
+
+### Added
+
+- **A strategy reports its growth, risk ratios and buy-and-hold benchmark.** The figures
+  PineTS computes over the whole run now reach the host with the strategy's state: CAGR,
+  the Sharpe and Sortino ratios, and the buy-and-hold P&L, gain and the strategy's
+  outperformance over it. A figure PineTS cannot compute (no trade to anchor buy and hold
+  on, an account wiped out) is left out. Vela 0.9.3 types these fields on
+  `StrategyState`; the package now builds against it.
+
+### Fixed
+
+- **A script's short title labels it on the chart.** A script that declares one
+  (`indicator("Moving Average Ribbon", shorttitle = "MAR")`) now shows it on its legend row
+  and in its settings-dialog header; the full title stays everywhere else.
+- **A script with an empty title is named "Study".** `indicator("")` and `strategy("")`
+  used to be added with a blank legend row, which left nothing to hover, so their
+  settings and remove controls could not be reached.
+
 ## [v0.3.1]
 
 ### Changed

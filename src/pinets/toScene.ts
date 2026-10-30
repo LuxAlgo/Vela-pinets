@@ -131,6 +131,8 @@ export function toScene(run: PineRun, instanceId: string): ToSceneResult {
     const model: IndicatorModel = {
         id: instanceId,
         title: run.meta.title,
+        // PineTS reports an undeclared shorttitle as "", which would blank the legend.
+        ...(run.meta.shorttitle?.trim() ? { shorttitle: run.meta.shorttitle } : {}),
         overlay: run.meta.overlay,
         paneHint: run.meta.overlay ? 'price' : 'new',
         series,
