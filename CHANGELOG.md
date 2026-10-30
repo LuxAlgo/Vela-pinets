@@ -10,8 +10,8 @@ All notable changes to Vela-pinets, newest first.
   PineTS computes over the whole run now reach the host with the strategy's state: CAGR,
   the Sharpe and Sortino ratios, and the buy-and-hold P&L, gain and the strategy's
   outperformance over it. A figure PineTS cannot compute (no trade to anchor buy and hold
-  on, an account wiped out) is left out. Requires a Vela with these fields on
-  `StrategyState`.
+  on, an account wiped out) is left out. Vela 0.9.3 types these fields on
+  `StrategyState`; the package now builds against it.
 
 ### Fixed
 
