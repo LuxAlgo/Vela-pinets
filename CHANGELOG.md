@@ -2,7 +2,7 @@
 
 All notable changes to Vela-pinets, newest first.
 
-## [Unreleased]
+## [v0.3.2]
 
 ### Added
 
