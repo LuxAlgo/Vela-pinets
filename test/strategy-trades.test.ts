@@ -345,6 +345,38 @@ describe('a strategy through the addon engine driving the built Vela', () => {
         chart.destroy();
     }, 30_000);
 
+    it("the run's growth, risk ratios and buy-and-hold benchmark reach the host", async () => {
+        const renderer = new RecordingRenderer();
+        const chart = new Vela(
+            {} as unknown as HTMLElement,
+            { symbol: 'TEST', timeframe: '60', live: false, volume: false },
+            { renderer, engines: [new PineEngine()], dataFeed: new FixedFeed() },
+        );
+        const errors: string[] = [];
+        chart.on('indicator:error', (e) => errors.push(e.error.message));
+        const h = chart.addIndicator(STRATEGY);
+        await chart.ready();
+        await waitFor(() => (renderer.lastTrades(h.id)?.length ?? 0) > 0 || errors.length > 0);
+        expect(errors).toEqual([]);
+
+        const snap = await h.context(['strategy', 'trades']);
+        const s = snap!.strategy!;
+        const first = [...snap!.trades!].sort((a, b) => a.entry.time - b.entry.time)[0]!;
+        const last = BARS[BARS.length - 1]!;
+        // Buy and hold: the whole capital bought at the first trade's fill, held to the last close.
+        const gain = (last.close - first.entry.price) / first.entry.price;
+        expect(s.buyHoldPct).toBeCloseTo(gain * 100, 6);
+        expect(s.buyHoldPnl).toBeCloseTo(s.initialCapital * gain, 6);
+        expect(s.outperformance).toBeCloseTo(s.netPnl - s.buyHoldPnl!, 6);
+        // CAGR over the loaded bars' span, in percent.
+        const years = (last.time - BARS[0]!.time) / 86_400_000 / 365;
+        expect(s.cagr).toBeCloseTo(100 * (Math.pow((s.initialCapital + s.netPnl) / s.initialCapital, 1 / years) - 1), 6);
+        // Under a week of bars is fewer than two monthly returns: the ratios read 0, still reported.
+        expect(s.sharpe).toBe(0);
+        expect(s.sortino).toBe(0);
+        chart.destroy();
+    }, 30_000);
+
     it('declaration props reach the backtest: add-time override, then a live setProps re-run', async () => {
         const renderer = new RecordingRenderer();
         const chart = new Vela(
