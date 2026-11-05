@@ -2,6 +2,14 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.3.3]
+
+### Changed
+
+- **Works with Vela 0.10.** The peer range now includes `@luxalgo/vela` 0.10, whose UI kit
+  ships as its own package, `@luxalgo/vela-ui`. The engines use none of the kit, so nothing
+  changes for them; the package now builds and is tested against Vela 0.10.0.
+
 ## [v0.3.2]
 
 ### Added
