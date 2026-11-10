@@ -21,6 +21,7 @@ import {
     type PropsFilter,
 } from './runtime';
 import type { FootprintSource } from './footprints';
+import { rememberRefusals } from './refusals';
 
 /** The prepared token plus the in-process Indicator cache (reused across re-runs/ticks). */
 type PineSession = PineToken & IndicatorCache;
@@ -93,6 +94,8 @@ export class PineEngine implements ScriptingEngine {
         let props: Record<string, InputValue> = { ...(req.props ?? {}) };
         let visibleRange = req.visibleRange;
         let stopped = false;
+        // One gateway per session: a series the source refused is never asked for again.
+        const fetchSeries = rememberRefusals(req.fetchSeries);
 
         // ── Live streaming: one persistent context, re-executes only the forming bar per tick ──
         if (req.mode === 'live' && this.capabilities.streaming) {
@@ -110,7 +113,7 @@ export class PineEngine implements ScriptingEngine {
                     props,
                     bars: getBars,
                     market: () => req.market,
-                    fetchSeries: req.fetchSeries,
+                    fetchSeries,
                     footprints: this.footprints,
                     visibleRange,
                     onModel: (m) => {
@@ -177,7 +180,7 @@ export class PineEngine implements ScriptingEngine {
                     instanceId: token.instanceId,
                     inputs,
                     props,
-                    fetchSeries: req.fetchSeries,
+                    fetchSeries,
                     footprints: this.footprints,
                 });
                 if (stopped) return;

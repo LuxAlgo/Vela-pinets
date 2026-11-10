@@ -13,6 +13,7 @@ import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
 import type { PineLibraryImport, PineLibraryResolver, PropsFilter } from '../pinets/runtime';
 import type { FootprintRange, FootprintSource } from '../pinets/footprints';
+import { isSeriesRefusal, refusalError, refusalFields } from '../pinets/refusals';
 import workerCode from 'inline-worker:./worker.ts';
 
 export interface PineWorkerOptions {
@@ -280,7 +281,7 @@ export class PineWorkerEngine implements ScriptingEngine {
                 this.sessions.get(msg.sessionId)?.handlers.onWarning?.(msg.warning);
                 return;
             case 'error':
-                this.sessions.get(msg.sessionId)?.handlers.onError?.(new Error(msg.message));
+                this.sessions.get(msg.sessionId)?.handlers.onError?.(msg.refusal ? refusalError(msg.message, msg.refusal) : new Error(msg.message));
                 this.runFinished(msg.sessionId);
                 return;
             case 'done':
@@ -324,7 +325,7 @@ export class PineWorkerEngine implements ScriptingEngine {
         try {
             this.post({ kind: 'fetchSeriesResult', reqId, bars: await fetchSeries(symbol, timeframe, range) });
         } catch (err) {
-            this.post({ kind: 'fetchSeriesResult', reqId, error: err instanceof Error ? err.message : String(err) });
+            this.post({ kind: 'fetchSeriesResult', reqId, error: err instanceof Error ? err.message : String(err), ...(isSeriesRefusal(err) ? { refusal: refusalFields(err) } : {}) });
         }
     }
 
