@@ -12,8 +12,8 @@ All notable changes to Vela-pinets, newest first.
   with its message, which names the series and the finest timeframe it is served at, or
   reads na with a warning under `ignore_invalid_symbol`. Both engines now hand the host
   the same error with its fields; the worker engine used to reduce it to a plain message.
-  This needs a Vela that rejects refused series: with an older one, the request still
-  reads as an empty series.
+  This needs Vela 0.10.5 or later: with an older Vela, the request still reads as an
+  empty series.
 - **A refused series is asked for once per script.** A script that re-runs on every tick
   no longer asks the source again for a series it refused: the engine remembers the
   refusal for as long as the script runs. Any other failure is still retried.
@@ -21,6 +21,11 @@ All notable changes to Vela-pinets, newest first.
   market carries no volume (`volume: false` on its symbol info, as economic series do),
   `syminfo.volumetype` reads `"n/a"`, Pine's value for that case. A volume type the feed
   sets itself is kept. `volume` still reads 0 on such a market.
+
+### Changed
+
+- **Built and tested against Vela 0.10.5.** The peer range is unchanged: the engines
+  work with every Vela it admits, and use what 0.10.5 adds when the host runs it.
 
 ## [v0.3.3]
 
