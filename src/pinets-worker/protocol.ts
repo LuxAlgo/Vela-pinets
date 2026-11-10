@@ -5,6 +5,7 @@ import type { BarRange } from '@luxalgo/vela/plugin';
 import type { PreparedScript, ExecutionMarket, VisibleBarRange, EngineAlert, EngineWarning, ContextSelect, EngineContextSnapshot } from '@luxalgo/vela/plugin';
 import type { PineLibraryImport, PropsFilter } from '../pinets/runtime';
 import type { FootprintBar, FootprintRange } from '../pinets/footprints';
+import type { SeriesRefusal } from '../pinets/refusals';
 
 /**
  * The message protocol between `PineWorkerEngine` (main thread) and `worker.ts`
@@ -58,7 +59,9 @@ export type MainToWorker =
     | { kind: 'bars'; sessionId: number; bars: OHLCV[]; restart?: boolean }
     | { kind: 'getContext'; sessionId: number; reqId: number; select?: ContextSelect }
     | { kind: 'stop'; sessionId: number }
-    | { kind: 'fetchSeriesResult'; reqId: number; bars?: OHLCV[]; error?: string }
+    /** `refusal`: the error was the source's PERMANENT refusal of the series (see `pinets/refusals`) —
+     *  its fields travel next to the message so the worker rebuilds the same refusal. */
+    | { kind: 'fetchSeriesResult'; reqId: number; bars?: OHLCV[]; error?: string; refusal?: SeriesRefusal }
     | { kind: 'fetchFootprintsResult'; reqId: number; bars?: FootprintBar[]; error?: string }
     | { kind: 'resolveImportResult'; reqId: number; source?: string | null; error?: string };
 
@@ -67,7 +70,8 @@ export type WorkerToMain =
     | { kind: 'model'; sessionId: number; model: IndicatorModel }
     | { kind: 'alert'; sessionId: number; alert: EngineAlert }
     | { kind: 'warning'; sessionId: number; warning: EngineWarning }
-    | { kind: 'error'; sessionId: number; message: string }
+    /** `refusal`: the script stopped on a source's permanent refusal — rebuilt as the same error on the main thread. */
+    | { kind: 'error'; sessionId: number; message: string; refusal?: SeriesRefusal }
     | { kind: 'done'; sessionId: number }
     | { kind: 'reactsToViewport'; sessionId: number; value: boolean }
     | { kind: 'contextResult'; reqId: number; snapshot: EngineContextSnapshot | null }

@@ -6,6 +6,17 @@ All notable changes to Vela-pinets, newest first.
 
 ### Added
 
+- **A script reports why its data source refused a series.** When a source will never
+  serve a series a script asks for (an economic monthly series asked at an hourly
+  timeframe), Vela rejects the request with a `DataUnavailableError`. The script stops
+  with its message, which names the series and the finest timeframe it is served at, or
+  reads na with a warning under `ignore_invalid_symbol`. Both engines now hand the host
+  the same error with its fields; the worker engine used to reduce it to a plain message.
+  This needs a Vela that rejects refused series: with an older one, the request still
+  reads as an empty series.
+- **A refused series is asked for once per script.** A script that re-runs on every tick
+  no longer asks the source again for a series it refused: the engine remembers the
+  refusal for as long as the script runs. Any other failure is still retried.
 - **A script knows when its market has no volume data.** When the feed states that a
   market carries no volume (`volume: false` on its symbol info, as economic series do),
   `syminfo.volumetype` reads `"n/a"`, Pine's value for that case. A volume type the feed

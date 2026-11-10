@@ -10,6 +10,7 @@ import {
     type LiveStreamHandle,
 } from '../pinets/runtime';
 import { snapshotFromCtx } from '../pinets/contextSnapshot';
+import { isSeriesRefusal, refusalError, refusalFields, rememberRefusals } from '../pinets/refusals';
 import type { OHLCV } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { PreparedScript, ExecutionMarket, VisibleBarRange, FetchSeries } from '@luxalgo/vela/plugin';
@@ -63,6 +64,14 @@ interface Session {
     stream: LiveStreamHandle | null;
     /** The main thread's footprint source, proxied — undefined when the engine has none. */
     footprints: FootprintSource | undefined;
+    /** The proxied gateway, per session: a series the source refused is never asked for again. */
+    fetchSeries: FetchSeries;
+}
+
+/** A session's `error` message — a source's refusal keeps its fields, so the main thread rebuilds the same error. */
+function errorMessage(sessionId: number, err: unknown): WorkerToMain {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: 'error', sessionId, message, ...(isSeriesRefusal(err) ? { refusal: refusalFields(err) } : {}) };
 }
 
 const sessions = new Map<number, Session>();
@@ -145,7 +154,7 @@ function startStream(s: Session): void {
         props: s.props,
         bars: () => s.bars,
         market: () => s.market,
-        fetchSeries,
+        fetchSeries: s.fetchSeries,
         footprints: s.footprints,
         visibleRange: s.visibleRange,
         onModel: (model) => {
@@ -153,7 +162,7 @@ function startStream(s: Session): void {
         },
         onAlert: (alert) => post({ kind: 'alert', sessionId: s.id, alert }),
         onWarning: (warning) => post({ kind: 'warning', sessionId: s.id, warning }),
-        onError: (e) => post({ kind: 'error', sessionId: s.id, message: e.message }),
+        onError: (e) => post(errorMessage(s.id, e)),
     });
 }
 
@@ -170,7 +179,7 @@ async function runSession(s: Session): Promise<void> {
             instanceId: token.instanceId,
             inputs: s.inputs,
             props: s.props,
-            fetchSeries,
+            fetchSeries: s.fetchSeries,
             footprints: s.footprints,
         });
         if (s.stopped) return;
@@ -183,7 +192,7 @@ async function runSession(s: Session): Promise<void> {
         if (outcome.model) post({ kind: 'model', sessionId: s.id, model: outcome.model });
         post({ kind: 'done', sessionId: s.id });
     } catch (err) {
-        post({ kind: 'error', sessionId: s.id, message: err instanceof Error ? err.message : String(err) });
+        post(errorMessage(s.id, err));
     }
 }
 
@@ -213,6 +222,7 @@ ctx.addEventListener('message', (event) => {
                 stream: null,
                 lastCtx: null,
                 footprints: msg.footprints ? fetchFootprints : undefined,
+                fetchSeries: rememberRefusals(fetchSeries),
             };
             sessions.set(s.id, s);
             if (s.mode === 'live') {
@@ -291,7 +301,7 @@ ctx.addEventListener('message', (event) => {
             const p = pendingFetch.get(msg.reqId);
             if (!p) return;
             pendingFetch.delete(msg.reqId);
-            if (msg.error) p.reject(new Error(msg.error));
+            if (msg.error) p.reject(msg.refusal ? refusalError(msg.error, msg.refusal) : new Error(msg.error));
             else p.resolve(msg.bars ?? []);
             return;
         }

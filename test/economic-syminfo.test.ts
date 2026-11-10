@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PineEngine } from '../src/pinets/PineEngine';
 import { PineWorkerEngine } from '../src/pinets-worker/PineWorkerEngine';
 import { syminfoForSymbol, makeLiveProvider } from '../src/pinets/runtime';
-import type { WorkerLike } from '../src/pinets-worker/protocol';
+import { loadLoopbackWorker } from './fixtures/loopbackWorker';
 import type { ExecutionMarket, OHLCV, IndicatorModel, LineLikeSeries, SymbolInfo } from '@luxalgo/vela/plugin';
 
 /**
@@ -11,8 +11,6 @@ import type { ExecutionMarket, OHLCV, IndicatorModel, LineLikeSeries, SymbolInfo
  * `syminfo.volumetype == "n/a"`; the runtime maps it for BOTH engines. Volume itself still
  * reads 0 on such a market (whether it should read na is not decided yet).
  */
-
-type Listener = (event: { data: unknown }) => void;
 
 const ECONOMIC: SymbolInfo = {
     ticker: 'CPIAUCSL',
@@ -46,38 +44,15 @@ plot(timeframe.ismonthly ? 1 : 0, "monthly")
 plot(volume, "volume")
 `;
 
-/**
- * The real worker module, run in this thread behind a loopback: messages are
- * structured-cloned both ways, as across a real worker boundary, so the worker engine
- * executes through `worker.ts` and the protocol exactly as in a browser.
- */
-const toWorker: Listener[] = [];
-const toMain: Listener[] = [];
-const loopback: WorkerLike = {
-    postMessage: (message) => queueMicrotask(() => toWorker.forEach((l) => l({ data: structuredClone(message) }))),
-    addEventListener: (_type, listener) => void toMain.push(listener),
-    terminate: () => {},
-};
-const g = globalThis as { self?: unknown };
-const hadSelf = 'self' in g;
-const previousSelf = g.self;
-
+let loopback: Awaited<ReturnType<typeof loadLoopbackWorker>>;
 beforeAll(async () => {
-    g.self = {
-        postMessage: (message: unknown) => queueMicrotask(() => toMain.forEach((l) => l({ data: structuredClone(message) }))),
-        addEventListener: (_type: 'message', listener: Listener) => void toWorker.push(listener),
-    };
-    await import('../src/pinets-worker/worker');
+    loopback = await loadLoopbackWorker();
 });
-
-afterAll(() => {
-    if (hadSelf) g.self = previousSelf;
-    else delete g.self;
-});
+afterAll(() => loopback.restore());
 
 const ENGINES = {
     PineEngine: () => new PineEngine(),
-    PineWorkerEngine: () => new PineWorkerEngine({ createWorker: () => loopback }),
+    PineWorkerEngine: () => new PineWorkerEngine({ createWorker: () => loopback.worker }),
 };
 
 async function run(engine: PineEngine | PineWorkerEngine, symbolInfo: SymbolInfo): Promise<IndicatorModel> {
