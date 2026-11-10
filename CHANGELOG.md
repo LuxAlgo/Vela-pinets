@@ -2,6 +2,15 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **A script knows when its market has no volume data.** When the feed states that a
+  market carries no volume (`volume: false` on its symbol info, as economic series do),
+  `syminfo.volumetype` reads `"n/a"`, Pine's value for that case. A volume type the feed
+  sets itself is kept. `volume` still reads 0 on such a market.
+
 ## [v0.3.3]
 
 ### Changed
