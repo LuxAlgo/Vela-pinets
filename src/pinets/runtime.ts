@@ -590,7 +590,7 @@ export function syminfoForSymbol(market: ExecutionMarket, sym: string | undefine
 
 /** Symbol info for execution: prefer the feed's, else synthesize from the ticker. */
 function syminfoFor(market: ExecutionMarket): Record<string, unknown> {
-    if (market.symbolInfo) return market.symbolInfo;
+    if (market.symbolInfo) return pineSyminfo(market.symbolInfo);
     const symbol = market.symbol;
     const base = symbol.replace(/(USDT|USDC|USD|PERP|BUSD)$/i, '') || symbol;
     return {
@@ -610,6 +610,17 @@ function syminfoFor(market: ExecutionMarket): Record<string, unknown> {
         pointvalue: 1,
         pricescale: 100,
     };
+}
+
+/**
+ * The feed's symbol facts in Pine's `syminfo` vocabulary. Vela states a market without
+ * volume data as the neutral fact `volume: false`; Pine names it `syminfo.volumetype ==
+ * "n/a"`. A volumetype the feed sets itself wins. The host's object is never mutated:
+ * a copy carries the mapped field.
+ */
+function pineSyminfo(info: Record<string, unknown>): Record<string, unknown> {
+    const declared = typeof info.volumetype === 'string' && info.volumetype !== '';
+    return info.volume === false && !declared ? { ...info, volumetype: 'n/a' } : info;
 }
 
 interface PineCtx {
