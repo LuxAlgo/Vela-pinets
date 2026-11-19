@@ -57,21 +57,108 @@ export interface FootprintRange {
  * — whenever the market data changes (a live tick, new bars) — a call from the
  * forming bar's open time onward. Returned bars REPLACE what PineTS holds for those
  * open times, so a live source just answers with its current state for the tail.
+ * History is never asked for again within a run: a source that gains more of it
+ * later says so through {@link FootprintSource.onChange}.
  * Bars the source cannot serve are omitted; the script reads `na` for them.
  */
-export type FootprintSource = (symbol: string, timeframe: string, range: FootprintRange) => Promise<FootprintBar[]>;
+export interface FootprintSource {
+    (symbol: string, timeframe: string, range: FootprintRange): Promise<FootprintBar[]>;
+    /**
+     * Optional, for a source whose history arrives progressively: call `listener` whenever
+     * the source can answer `(symbol, timeframe)` with more history than it last did. The
+     * engine then runs the script again over its whole history. Returns the unsubscribe.
+     *
+     * An engine subscribes BEFORE its first ask for a series, until the script stops, so a
+     * source can tell an ask that will be followed up from one that will not. Calls that
+     * arrive while the script is running are folded into ONE more run: signal whenever
+     * history lands.
+     */
+    onChange?: (symbol: string, timeframe: string, listener: () => void) => () => void;
+}
+
+/** One running script's link to its footprint source (see {@link watchFootprints}). */
+export interface FootprintWatch {
+    /** Ask the source, subscribing first to its change signal for that series. */
+    ask(symbol: string, timeframe: string, range: FootprintRange): Promise<FootprintBar[]>;
+    /** A run of the script began. `fresh`: it replaces every run begun before it (a restarted stream). */
+    runStarted(fresh?: boolean): void;
+    /** A run delivered its result, or failed. */
+    runEnded(): void;
+    /** End every subscription; later changes are not relayed. */
+    stop(): void;
+}
+
+/**
+ * Bind one running script to `source`: its asks pass through, and the first ask for
+ * each `(symbol, timeframe)` subscribes to the source's change signal. A change calls
+ * `rerun()` — unless a run is in flight, which holds an older answer: then ONE `rerun()`
+ * follows it, however many changes arrived. Redoing a run at once would throw away a
+ * stream's first run, so a source signalling faster than a run takes would starve the
+ * script. Both engines go through this, on the thread the source lives on.
+ */
+export function watchFootprints(source: FootprintSource, rerun: () => void): FootprintWatch {
+    const subscriptions = new Map<string, () => void>();
+    let stopped = false;
+    let running = 0;
+    let stale = false;
+    const changed = (): void => {
+        if (stopped) return;
+        if (running > 0) stale = true;
+        else rerun();
+    };
+    return {
+        ask(symbol, timeframe, range) {
+            const key = `${symbol}\u0000${timeframe}`;
+            // Its own listener per series: a source may tell subscriptions apart by it.
+            if (!stopped && source.onChange && !subscriptions.has(key)) subscriptions.set(key, source.onChange(symbol, timeframe, () => changed()));
+            return source(symbol, timeframe, range);
+        },
+        runStarted(fresh = false) {
+            running = fresh ? 1 : running + 1;
+            if (fresh) stale = false;
+        },
+        runEnded() {
+            if (running === 0) return;
+            running -= 1;
+            if (running > 0 || !stale || stopped) return;
+            stale = false;
+            rerun();
+        },
+        stop() {
+            stopped = true;
+            for (const end of subscriptions.values()) end();
+            subscriptions.clear();
+        },
+    };
+}
 
 /**
  * The optional `getFootprintData` member of a PineTS market-data provider, bound to
  * a host source — or NOTHING when the host has none, so PineTS's own capability
  * check (`typeof source.getFootprintData === 'function'`) stays the single switch.
  * Spread it into a provider object.
+ *
+ * `chartEnd` is where the chart's own series ends (its last bar's close). PineTS ends
+ * its history ask there only when its bars carry a close time, which bars of a
+ * continuous market do not: left open, the ask reads "up to now", past the end of a
+ * chart that stops earlier (a replay, a symbol no longer traded). So the history ask
+ * for the chart's series takes its end from `chartEnd` when PineTS gives none.
  */
-export function footprintSurface(source: FootprintSource | undefined, chartSymbol: () => string, chartTimeframe: () => string): FootprintSurface {
+export function footprintSurface(
+    source: FootprintSource | undefined,
+    chartSymbol: () => string,
+    chartTimeframe: () => string,
+    chartEnd?: () => number | undefined,
+): FootprintSurface {
     if (!source) return {};
     return {
-        getFootprintData: (symbol, timeframe, limit, sDate, eDate) =>
-            source(plainSymbol(symbol ?? chartSymbol()), timeframe ?? chartTimeframe(), { from: sDate, to: eDate, limit }),
+        getFootprintData: (symbol, timeframe, limit, sDate, eDate) => {
+            const sym = plainSymbol(symbol ?? chartSymbol());
+            const tf = timeframe ?? chartTimeframe();
+            // `limit` marks the history ask: a tail poll carries none and stays open-ended.
+            const ownHistory = limit != null && sym === plainSymbol(chartSymbol()) && tf === chartTimeframe();
+            return source(sym, tf, { from: sDate, to: eDate ?? (ownHistory ? chartEnd?.() : undefined), limit });
+        },
     };
 }
 

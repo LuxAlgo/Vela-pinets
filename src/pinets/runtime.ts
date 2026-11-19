@@ -262,7 +262,7 @@ export async function runPineStatic(opts: {
         getMarketData: (sym?: string, tf?: string, limit?: number, sDate?: number, eDate?: number) =>
             isChartSeries(sym, tf, market) ? Promise.resolve(klines) : secondaryKlines(fetchSeries, sym, tf, limit, sDate, eDate, syminfoForSymbol(market, sym)),
         getSymbolInfo: async (sym?: string) => syminfoForSymbol(market, sym),
-        ...footprintSurface(footprints, () => market.symbol, () => market.timeframe),
+        ...footprintSurface(footprints, () => market.symbol, () => market.timeframe, () => seriesEnd(klines, market.timeframe)),
     };
     const pine = new PineTS(source as never, chartTickerOf(market), market.timeframe, klines.length);
     const libraries = (prepared.token as PineToken).libraries;
@@ -427,6 +427,19 @@ export function chartTickerOf(market: ExecutionMarket): string {
     return market.chartStyle === 'heikinashi' ? `${market.symbol};heikinashi` : market.symbol;
 }
 
+/**
+ * Where a series of klines ends: its last bar's close time, else that bar's open plus
+ * the timeframe — the net PineTS itself applies to bars without a close time. Undefined
+ * where neither is known (no bars, a weekly or monthly bar without a close time).
+ */
+export function seriesEnd(klines: ReadonlyArray<Record<string, number>>, tf: string | undefined): number | undefined {
+    const last = klines[klines.length - 1];
+    if (!last) return undefined;
+    if (last.closeTime != null) return last.closeTime;
+    const tfMin = tfMinutesFor(tf);
+    return tfMin == null || last.openTime == null ? undefined : last.openTime + tfMin * 60_000;
+}
+
 /** True when PineTS is asking for the chart's own series (served in-memory) — addressed by {@link chartTickerOf}. */
 export function isChartSeries(sym: string | undefined, tf: string | undefined, market: ExecutionMarket): boolean {
     return (sym == null || sym === chartTickerOf(market)) && (tf == null || tf === market.timeframe);
@@ -470,7 +483,10 @@ export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => Execut
     let lastKey = '';
     let dirty = false;
     return {
-        ...footprintSurface(footprints, () => getMarket().symbol, () => getMarket().timeframe),
+        ...footprintSurface(footprints, () => getMarket().symbol, () => getMarket().timeframe, () => {
+            const market = getMarket();
+            return seriesEnd(toKlines(getBars(), market.timeframe, market.symbolInfo), market.timeframe);
+        }),
         markDirty: () => {
             dirty = true;
         },

@@ -20,6 +20,9 @@ import type { SeriesRefusal } from '../pinets/refusals';
  * `getFootprintData` call PineTS makes round-trips as `fetchFootprints`. So does the
  * engine's `importResolver`: `prepare` flags it, and each library the script imports is
  * asked for as `resolveImport`; the sources then travel on the prepared token.
+ *
+ * A footprint source's change signal never crosses: the main thread hears it and
+ * re-runs the session with the messages a bar change already uses.
  */
 
 export type MainToWorker =
@@ -76,7 +79,8 @@ export type WorkerToMain =
     | { kind: 'reactsToViewport'; sessionId: number; value: boolean }
     | { kind: 'contextResult'; reqId: number; snapshot: EngineContextSnapshot | null }
     | { kind: 'fetchSeries'; reqId: number; symbol: string; timeframe: string; range: BarRange }
-    | { kind: 'fetchFootprints'; reqId: number; symbol: string; timeframe: string; range: FootprintRange }
+    /** `sessionId`: the asking session — the main thread subscribes it to the source's change signal. */
+    | { kind: 'fetchFootprints'; reqId: number; sessionId: number; symbol: string; timeframe: string; range: FootprintRange }
     | { kind: 'resolveImport'; reqId: number; path: string; info: PineLibraryImport };
 
 /** Minimal Worker surface the proxy needs — the real `Worker` satisfies it; tests inject a fake. */
