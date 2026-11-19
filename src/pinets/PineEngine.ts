@@ -20,7 +20,7 @@ import {
     type PineToken,
     type PropsFilter,
 } from './runtime';
-import type { FootprintSource } from './footprints';
+import { watchFootprints, type FootprintSource } from './footprints';
 import { rememberRefusals } from './refusals';
 
 /** The prepared token plus the in-process Indicator cache (reused across re-runs/ticks). */
@@ -96,6 +96,11 @@ export class PineEngine implements ScriptingEngine {
         let stopped = false;
         // One gateway per session: a series the source refused is never asked for again.
         const fetchSeries = rememberRefusals(req.fetchSeries);
+        // A run reads its footprint history once: when the source gains more of it, the
+        // watch has the whole run redone (`rerun`, set by the mode below).
+        let rerun = (): void => {};
+        const watch = this.footprints ? watchFootprints(this.footprints, () => rerun()) : undefined;
+        const footprints: FootprintSource | undefined = watch ? (symbol, timeframe, range) => watch.ask(symbol, timeframe, range) : undefined;
 
         // ── Live streaming: one persistent context, re-executes only the forming bar per tick ──
         if (req.mode === 'live' && this.capabilities.streaming) {
@@ -105,6 +110,7 @@ export class PineEngine implements ScriptingEngine {
             const start = (): void => {
                 started = true;
                 stream?.stop();
+                watch?.runStarted(true);
                 stream = openLiveStream({
                     token,
                     cache: token,
@@ -114,15 +120,23 @@ export class PineEngine implements ScriptingEngine {
                     bars: getBars,
                     market: () => req.market,
                     fetchSeries,
-                    footprints: this.footprints,
+                    footprints,
                     visibleRange,
                     onModel: (m) => {
                         if (!stopped) handlers.onModel(m);
+                        watch?.runEnded(); // the stream's first run is in; later models find no run to end
                     },
                     onAlert: (a) => handlers.onAlert?.(a),
                     onWarning: (w) => handlers.onWarning?.(w),
-                    onError: (e) => handlers.onError?.(e),
+                    onError: (e) => {
+                        handlers.onError?.(e);
+                        watch?.runEnded();
+                    },
                 });
+            };
+            // The stream's history is frozen at start(), footprints included: restart it.
+            rerun = (): void => {
+                if (started && !stopped) start();
             };
             // Policy A: during a history backfill the stream must not start — its history
             // length is FROZEN at start() (ticks only re-feed the tail), so a stream begun
@@ -136,6 +150,7 @@ export class PineEngine implements ScriptingEngine {
                 },
                 stop: () => {
                     stopped = true;
+                    watch?.stop();
                     stream?.stop();
                 },
                 update: (next, nextProps) => {
@@ -170,6 +185,7 @@ export class PineEngine implements ScriptingEngine {
         const runOnce = async (): Promise<void> => {
             if (stopped) return;
             running = true;
+            watch?.runStarted();
             try {
                 const outcome = await runPineStatic({
                     ind: indicatorFor(token, token.source, inputs, props),
@@ -181,7 +197,7 @@ export class PineEngine implements ScriptingEngine {
                     inputs,
                     props,
                     fetchSeries,
-                    footprints: this.footprints,
+                    footprints,
                 });
                 if (stopped) return;
                 lastCtx = outcome.ctx;
@@ -195,7 +211,12 @@ export class PineEngine implements ScriptingEngine {
                 handlers.onDone?.();
             } catch (err) {
                 handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
+            } finally {
+                watch?.runEnded();
             }
+        };
+        rerun = (): void => {
+            if (!stopped && !deferred) void runOnce();
         };
         if (!deferred) void runOnce();
 
@@ -204,6 +225,7 @@ export class PineEngine implements ScriptingEngine {
                 Promise.resolve(lastCtx === null ? null : snapshotFromCtx(lastCtx, running ? 'computing' : 'idle', select)),
             stop: () => {
                 stopped = true;
+                watch?.stop();
             },
             update: (next, nextProps) => {
                 inputs = { ...inputs, ...next };

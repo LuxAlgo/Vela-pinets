@@ -12,7 +12,7 @@ import type { BarRange } from '@luxalgo/vela/plugin';
 import type { InputValue } from '@luxalgo/vela/plugin';
 import type { MainToWorker, WorkerToMain, WorkerLike } from './protocol';
 import type { PineLibraryImport, PineLibraryResolver, PropsFilter } from '../pinets/runtime';
-import type { FootprintRange, FootprintSource } from '../pinets/footprints';
+import { watchFootprints, type FootprintRange, type FootprintSource, type FootprintWatch } from '../pinets/footprints';
 import { isSeriesRefusal, refusalError, refusalFields } from '../pinets/refusals';
 import workerCode from 'inline-worker:./worker.ts';
 
@@ -82,6 +82,8 @@ interface SessionEntry {
     dirtyBars: boolean;
     /** LIVE only: newest bar time already shipped — a tick sends just the bars at/after it. */
     lastSentTime: number;
+    /** The session's link to the engine's footprint source: a change there re-runs the session. */
+    footprints?: FootprintWatch;
 }
 
 /**
@@ -143,6 +145,10 @@ export class PineWorkerEngine implements ScriptingEngine {
         const mode: 'static' | 'live' = req.mode === 'live' ? 'live' : 'static';
         const bars = this.barsOf(req);
         const entry: SessionEntry = { handlers, req, mode, pendingRuns: 0, dirtyBars: false, lastSentTime: bars[bars.length - 1]?.time ?? 0 };
+        // More footprint history re-runs the session the way a completed backfill does: a
+        // fresh full snapshot, coalesced behind a static run in flight, a restarted stream.
+        if (this.footprints) entry.footprints = watchFootprints(this.footprints, () => this.notifyBars(sessionId, 'complete'));
+        if (mode === 'live') entry.footprints?.runStarted(true);
         this.sessions.set(sessionId, entry);
         const msg: MainToWorker = {
             kind: 'execute',
@@ -169,12 +175,15 @@ export class PineWorkerEngine implements ScriptingEngine {
                 }),
             stop: () => {
                 this.post({ kind: 'stop', sessionId });
+                entry.footprints?.stop();
                 this.sessions.delete(sessionId);
             },
             update: (inputs, props) => {
                 const msg: MainToWorker = { kind: 'update', sessionId, inputs, ...(props ? { props } : {}) };
-                if (mode === 'live') this.post(msg);
-                else this.postRun(entry, msg);
+                if (mode === 'live') {
+                    this.post(msg);
+                    entry.footprints?.runStarted(true); // the worker re-streams
+                } else this.postRun(entry, msg);
             },
             setVisibleRange: (range) => {
                 if (mode === 'live') this.post({ kind: 'setVisibleRange', sessionId, range });
@@ -205,6 +214,7 @@ export class PineWorkerEngine implements ScriptingEngine {
                 // Backfill finished: (re)start the stream over the FULL history in one snapshot.
                 this.post({ kind: 'bars', sessionId, bars, restart: true });
                 s.lastSentTime = bars[bars.length - 1]?.time ?? 0;
+                s.footprints?.runStarted(true);
                 return;
             }
             // A tick: ship only the bars at/after the last sent one (>= — the forming bar
@@ -273,6 +283,7 @@ export class PineWorkerEngine implements ScriptingEngine {
             }
             case 'model':
                 this.sessions.get(msg.sessionId)?.handlers.onModel(msg.model);
+                this.sessions.get(msg.sessionId)?.footprints?.runEnded(); // a live stream's first run is in
                 return;
             case 'alert':
                 this.sessions.get(msg.sessionId)?.handlers.onAlert?.(msg.alert);
@@ -283,6 +294,7 @@ export class PineWorkerEngine implements ScriptingEngine {
             case 'error':
                 this.sessions.get(msg.sessionId)?.handlers.onError?.(msg.refusal ? refusalError(msg.message, msg.refusal) : new Error(msg.message));
                 this.runFinished(msg.sessionId);
+                this.sessions.get(msg.sessionId)?.footprints?.runEnded();
                 return;
             case 'done':
                 this.sessions.get(msg.sessionId)?.handlers.onDone?.();
@@ -297,7 +309,7 @@ export class PineWorkerEngine implements ScriptingEngine {
                 void this.serveFetch(msg.reqId, msg.symbol, msg.timeframe, msg.range);
                 return;
             case 'fetchFootprints':
-                void this.serveFootprints(msg.reqId, msg.symbol, msg.timeframe, msg.range);
+                void this.serveFootprints(msg.reqId, msg.sessionId, msg.symbol, msg.timeframe, msg.range);
                 return;
             case 'resolveImport':
                 void this.serveImport(msg.reqId, msg.path, msg.info);
@@ -332,15 +344,17 @@ export class PineWorkerEngine implements ScriptingEngine {
     /**
      * Answer a worker's footprint request from the engine's `footprints` option. The
      * worker only asks when `execute` flagged a source, so a missing one here is a
-     * host bug — answer empty rather than hang the script's await.
+     * host bug — answer empty rather than hang the script's await. So does the ask of a
+     * session stopped meanwhile, whose run posts nothing.
      */
-    private async serveFootprints(reqId: number, symbol: string, timeframe: string, range: FootprintRange): Promise<void> {
-        if (!this.footprints) {
+    private async serveFootprints(reqId: number, sessionId: number, symbol: string, timeframe: string, range: FootprintRange): Promise<void> {
+        const watch = this.sessions.get(sessionId)?.footprints;
+        if (!watch) {
             this.post({ kind: 'fetchFootprintsResult', reqId, bars: [] });
             return;
         }
         try {
-            this.post({ kind: 'fetchFootprintsResult', reqId, bars: await this.footprints(symbol, timeframe, range) });
+            this.post({ kind: 'fetchFootprintsResult', reqId, bars: await watch.ask(symbol, timeframe, range) });
         } catch (err) {
             this.post({ kind: 'fetchFootprintsResult', reqId, error: err instanceof Error ? err.message : String(err) });
         }

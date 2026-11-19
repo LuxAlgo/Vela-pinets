@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Context } from 'pinets';
-import { footprintSurface, type FootprintBar, type FootprintSource } from '../src/pinets/footprints';
+import { footprintSurface, watchFootprints, type FootprintBar, type FootprintSource } from '../src/pinets/footprints';
 import { makeLiveProvider } from '../src/pinets/runtime';
 import { PineEngine } from '../src/pinets/PineEngine';
 import type { ExecutionMarket, ExecutionRequest, FetchSeries, OHLCV, IndicatorModel } from '@luxalgo/vela/plugin';
@@ -53,6 +53,80 @@ describe('footprintSurface (provider member)', () => {
             // Tail poll: chart symbol/timeframe defaults, open-ended range.
             { symbol: 'BTCUSDT', timeframe: '15', range: { from: T0 + 5 * TF_MS, to: undefined, limit: undefined } },
         ]);
+    });
+
+    it("ends the chart series' history ask at the chart's last bar when PineTS leaves the end open", async () => {
+        const calls: Array<{ symbol: string; timeframe: string; range: unknown }> = [];
+        const END = T0 + 96 * TF_MS;
+        const surface = footprintSurface(recordingSource([], calls), () => 'BTCUSDT', () => '15', () => END);
+        await surface.getFootprintData!('BTCUSDT', '15', 96, T0); // history, no end from PineTS
+        await surface.getFootprintData!('BTCUSDT', '15', 96, T0, T0 + 50 * TF_MS); // PineTS's own end wins
+        await surface.getFootprintData!('BTCUSDT', '15', undefined, T0 + 95 * TF_MS); // a tail poll stays open
+        await surface.getFootprintData!('ETHUSDT', '15', 96, T0); // another series: its end is not the chart's
+        expect(calls.map((c) => (c.range as { to?: number }).to)).toEqual([END, T0 + 50 * TF_MS, undefined, undefined]);
+    });
+});
+
+describe('watchFootprints (a running script listening to its source)', () => {
+    /** A source with a change signal: `change()` calls every listener, `events` records what happened in order. */
+    function signalling(): { source: FootprintSource; change: () => void; events: string[] } {
+        const listeners = new Set<() => void>();
+        const events: string[] = [];
+        const source: FootprintSource = Object.assign(async (symbol: string) => (events.push(`ask ${symbol}`), []), {
+            onChange: (symbol: string, _timeframe: string, listener: () => void): (() => void) => {
+                events.push(`subscribe ${symbol}`);
+                listeners.add(listener);
+                return () => (events.push(`unsubscribe ${symbol}`), void listeners.delete(listener));
+            },
+        });
+        return { source, change: () => [...listeners].forEach((l) => l()), events };
+    }
+
+    it('subscribes once per series, before the first ask for it, until stop()', async () => {
+        const { source, change, events } = signalling();
+        let reruns = 0;
+        const watch = watchFootprints(source, () => (reruns += 1));
+        await watch.ask('BTCUSDT', '15', { from: T0 });
+        await watch.ask('BTCUSDT', '15', { from: T0 });
+        await watch.ask('ETHUSDT', '15', { from: T0 });
+        expect(events).toEqual(['subscribe BTCUSDT', 'ask BTCUSDT', 'ask BTCUSDT', 'subscribe ETHUSDT', 'ask ETHUSDT']);
+        change();
+        expect(reruns).toBe(2); // one per series
+
+        watch.stop();
+        expect(events.slice(-2)).toEqual(['unsubscribe BTCUSDT', 'unsubscribe ETHUSDT']);
+        // A source without the signal is simply asked.
+        const plain = watchFootprints(recordingSource([{ openTime: T0, levels: REFERENCE_LEVELS }]), () => (reruns += 1));
+        expect(await plain.ask('BTCUSDT', '15', {})).toHaveLength(1);
+    });
+
+    it('folds the changes that arrive during a run into one rerun after it', async () => {
+        const { source, change } = signalling();
+        let reruns = 0;
+        const watch = watchFootprints(source, () => (reruns += 1));
+        await watch.ask('BTCUSDT', '15', { from: T0 });
+
+        change();
+        expect(reruns).toBe(1); // idle: at once
+
+        watch.runStarted();
+        watch.runStarted(); // two runs in flight
+        change();
+        change();
+        watch.runEnded();
+        expect(reruns).toBe(1); // one is still running
+        watch.runEnded();
+        expect(reruns).toBe(2);
+
+        // A fresh run replaces the ones before it, and reads the source anew.
+        watch.runStarted();
+        change();
+        watch.runStarted(true);
+        watch.runEnded();
+        expect(reruns).toBe(2);
+        watch.runEnded(); // nothing in flight: ignored
+        change();
+        expect(reruns).toBe(3);
     });
 });
 
