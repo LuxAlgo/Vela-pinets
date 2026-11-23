@@ -2,7 +2,7 @@
 
 All notable changes to Vela-pinets, newest first.
 
-## [Unreleased]
+## [v0.3.5]
 
 ### Added
 
@@ -16,6 +16,11 @@ All notable changes to Vela-pinets, newest first.
 
 ### Fixed
 
+- **Closed tick bars are confirmed.** On a tick timeframe (`1T`, `10T`, …), closed bars
+  used to receive a one-day fallback close time, leaving `barstate.isconfirmed` false on
+  every bar and preventing confirmation-gated scripts, alerts, and strategies from firing.
+  Every bar before the newest now closes at the next bar's open, so historical bars are
+  confirmed and a forming bar confirms as soon as the next tick bar opens.
 - **The footprint history request ends where the chart does.** On a market that trades
   around the clock the request carried no end (`range.to`), which reads as "up to now":
   on a replay or a symbol no longer traded, it fetched footprints no bar could use. The

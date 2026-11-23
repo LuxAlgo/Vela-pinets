@@ -251,7 +251,7 @@ export async function runPineStatic(opts: {
     const { ind, bars, market, visibleRange, prepared, instanceId, inputs, props, fetchSeries, footprints } = opts;
     ensurePineTablePatch();
     ensurePineMarkerPatch();
-    const klines = toKlines(bars, market.timeframe, market.symbolInfo);
+    const klines = toKlines(bars, market.timeframe, market.symbolInfo, Date.now());
     // The virtual provider: serve the chart's own series in-memory (the bars Vela
     // owns), but route any OTHER (symbol, timeframe) — i.e. request.security HTF/LTF/
     // cross-symbol — back to Vela's cache-backed gateway. PineTS reuses this same
@@ -399,14 +399,37 @@ function sessionCloser(bars: OHLCV[], tf: string | undefined, syminfo: unknown):
     };
 }
 
-/** OHLCV → PineTS kline shape (openTime-keyed). With a chart timeframe and a
- *  session-market syminfo, each kline carries its session {@link sessionCloser | closeTime}
- *  — continuous markets (and W/M) emit none and the engine's `open + tf` net applies. */
-export function toKlines(bars: OHLCV[], tf?: string, syminfo?: unknown): Array<Record<string, number>> {
-    const closer = sessionCloser(bars, tf, syminfo);
-    return bars.map((b) => {
+/** Tick-count timeframe (`1T`, `100T`, bare `T`): no fixed duration, so closed bars end
+ *  at the next bar's open rather than `open + tf` (which PineTS would default to 1 day,
+ *  leaving every bar unconfirmed). Matches Vela's grammar locally so this addon keeps its
+ *  wide `@luxalgo/vela` peer range. */
+function isTickTimeframe(tf: string | undefined): boolean {
+    if (tf == null) return false;
+    const m = /^(\d*)\s*[tT]$/.exec(tf.trim());
+    if (!m) return false;
+    return m[1] === '' || parseInt(m[1]!, 10) >= 1;
+}
+
+/** OHLCV → PineTS kline shape (openTime-keyed).
+ *  - On a tick timeframe (`1T`, `10T`, …), every bar before the newest is already closed
+ *    and closes at the next bar's open (capped at `now` when supplied so clock skew or a
+ *    same-millisecond burst never misses `barstate.isconfirmed`). The newest bar emits no
+ *    `closeTime` (it is still forming until another bar opens).
+ *  - On a fixed timeframe with a session-market syminfo, each kline carries its session
+ *    {@link sessionCloser | closeTime}; continuous markets (and W/M) emit none and the
+ *    engine's `open + tf` net applies. */
+export function toKlines(bars: OHLCV[], tf?: string, syminfo?: unknown, now?: number): Array<Record<string, number>> {
+    const tick = isTickTimeframe(tf);
+    const closer = tick ? null : sessionCloser(bars, tf, syminfo);
+    return bars.map((b, i) => {
         const k: Record<string, number> = { openTime: b.time, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0 };
-        const ct = closer?.(b.time);
+        let ct: number | null | undefined;
+        if (tick) {
+            const next = bars[i + 1];
+            if (next) ct = now != null ? Math.min(next.time, now) : next.time;
+        } else {
+            ct = closer?.(b.time);
+        }
         if (ct != null) k.closeTime = ct;
         return k;
     });
@@ -457,7 +480,7 @@ export async function secondaryKlines(
 ): Promise<Array<Record<string, number>>> {
     if (!fetchSeries || !sym || !tf) return [];
     const bars = await fetchSeries(sym, tf, { from: sDate, to: eDate, limit });
-    return toKlines(bars, tf, syminfo);
+    return toKlines(bars, tf, syminfo, Date.now());
 }
 
 /** The streaming provider a live PineTS session polls (see {@link makeLiveProvider}). */
@@ -496,7 +519,7 @@ export function makeLiveProvider(getBars: () => OHLCV[], getMarket: () => Execut
             if (!isChartSeries(ticker, tf, market)) {
                 return secondaryKlines(fetchSeries, ticker, tf, limit, sDate, eDate, syminfoForSymbol(market, ticker));
             }
-            const klines = toKlines(getBars(), market.timeframe, market.symbolInfo);
+            const klines = toKlines(getBars(), market.timeframe, market.symbolInfo, Date.now());
             // Initial load (no sDate): full history.
             if (sDate == null) return klines;
             // Streaming update: only the forming candle + any newer bars.
