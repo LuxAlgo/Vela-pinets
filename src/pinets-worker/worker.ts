@@ -93,16 +93,19 @@ const fetchSeries: FetchSeries = (symbol, timeframe, range) =>
     });
 
 /**
- * Worker-side footprint source: the same request/response pattern as `fetchSeries`,
- * answered by the engine's `footprints` option on the main thread. PineTS awaits
- * `getFootprintData` too, so the round-trip is transparent to the script.
+ * Worker-side footprint source of one session: the same request/response pattern as
+ * `fetchSeries`, answered by the engine's `footprints` option on the main thread.
+ * PineTS awaits `getFootprintData` too, so the round-trip is transparent to the
+ * script. Each ask names its session: the main thread listens to the source for it.
  */
-const fetchFootprints: FootprintSource = (symbol, timeframe, range) =>
-    new Promise<FootprintBar[]>((resolve, reject) => {
-        const reqId = ++fetchReqId;
-        pendingFootprints.set(reqId, { resolve, reject });
-        post({ kind: 'fetchFootprints', reqId, symbol, timeframe, range });
-    });
+const fetchFootprintsFor =
+    (sessionId: number): FootprintSource =>
+    (symbol, timeframe, range) =>
+        new Promise<FootprintBar[]>((resolve, reject) => {
+            const reqId = ++fetchReqId;
+            pendingFootprints.set(reqId, { resolve, reject });
+            post({ kind: 'fetchFootprints', reqId, sessionId, symbol, timeframe, range });
+        });
 
 /**
  * Worker-side import resolver: the engine's resolver is a main-thread function, so each
@@ -221,7 +224,7 @@ ctx.addEventListener('message', (event) => {
                 chain: Promise.resolve(),
                 stream: null,
                 lastCtx: null,
-                footprints: msg.footprints ? fetchFootprints : undefined,
+                footprints: msg.footprints ? fetchFootprintsFor(msg.sessionId) : undefined,
                 fetchSeries: rememberRefusals(fetchSeries),
             };
             sessions.set(s.id, s);

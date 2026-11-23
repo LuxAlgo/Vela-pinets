@@ -2,6 +2,31 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [v0.3.5]
+
+### Added
+
+- **A script is recomputed when its footprint source gains more history.** A
+  `FootprintSource` may carry an optional `onChange(symbol, timeframe, listener)` member.
+  A source that answers with the footprints it holds and keeps loading older ones calls
+  the listener when more are ready, and the script runs again over its whole history, so
+  `request.footprint()` reads the bars that were `na` the first time. Calls that arrive
+  while the script is running are folded into one more run. A source without `onChange`
+  behaves as before.
+
+### Fixed
+
+- **Closed tick bars are confirmed.** On a tick timeframe (`1T`, `10T`, …), closed bars
+  used to receive a one-day fallback close time, leaving `barstate.isconfirmed` false on
+  every bar and preventing confirmation-gated scripts, alerts, and strategies from firing.
+  Every bar before the newest now closes at the next bar's open, so historical bars are
+  confirmed and a forming bar confirms as soon as the next tick bar opens.
+- **The footprint history request ends where the chart does.** On a market that trades
+  around the clock the request carried no end (`range.to`), which reads as "up to now":
+  on a replay or a symbol no longer traded, it fetched footprints no bar could use. The
+  request for the chart's own series now ends at the close of its last bar, on intraday
+  and daily timeframes.
+
 ## [v0.3.4]
 
 ### Added

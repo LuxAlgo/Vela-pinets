@@ -189,6 +189,24 @@ the low edge of its bucket); PineTS re-bins them into `ticks_per_row × syminfo.
 rows and derives POC, value area and imbalances itself. Bars the source omits read as
 `na`. Requires a pinets build that ships `request.footprint()`.
 
+The history request of a run carries `from`, `limit` (the bar count) and, for the chart's
+own series, `to` (the close of its last bar); a request for the forming bar carries only
+`from`.
+
+A script reads its footprint history once per run. A source that cannot serve a long
+history at once can answer with what it holds, keep loading, and say when it holds more:
+
+```ts
+const progressive: FootprintSource = Object.assign(footprints, {
+    // Subscribed before the first request for a series, until the script stops.
+    onChange: (symbol: string, timeframe: string, listener: () => void) => myOrderFlow.onMoreHistory(symbol, timeframe, listener),
+});
+```
+
+Each call to the listener runs the script again over its whole history. Calls that arrive
+while the script is running are folded into one more run, so call it whenever history
+lands.
+
 ## Libraries (`import`)
 
 Scripts may import Pine libraries (`import user/library/version as alias`). The engine

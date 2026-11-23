@@ -5,7 +5,7 @@
 // (futures 1700-1600) closes next-day, and continuous markets emit nothing at all.
 import { describe, it, expect } from 'vitest';
 import type { OHLCV, IndicatorModel } from '@luxalgo/vela/plugin';
-import { toKlines, indicatorFor, runPineStatic, preparePine } from '../src/pinets/runtime';
+import { toKlines, indicatorFor, runPineStatic, openLiveStream, preparePine } from '../src/pinets/runtime';
 
 const NY = { timezone: 'America/New_York', session: '0930-1600', session_extended: '0400-2000' };
 const CME = { timezone: 'America/Chicago', session: '0830-1515', session_extended: '1700-1600' };
@@ -100,5 +100,142 @@ describe('time_close through a real PineTS run', () => {
         expect(last.value).toBe(cmeT(14, 15, 15)); // 15:00 bucket → 15:15 session close
         const first = pts[0]!;
         expect(first.value).toBe(cmeT(12, 9, 30)); // full bucket → open + 1h
+    });
+});
+
+describe('toKlines closeTime (tick timeframes)', () => {
+    it('closes every bar before the last at the next bar open and leaves the forming bar open', () => {
+        const t = Date.UTC(2026, 0, 12, 10, 0, 0);
+        const bars = [bar(t), bar(t + 1_200), bar(t + 1_201), bar(t + 5_000)];
+        for (const tf of ['1T', '10T', 'T', '100t']) {
+            const ks = toKlines(bars, tf, NY);
+            expect(ks.map((k) => k.closeTime)).toEqual([t + 1_200, t + 1_201, t + 5_000, undefined]);
+        }
+        // Single bar has no successor yet — still forming.
+        expect(toKlines([bar(t)], '10T')[0]!.closeTime).toBeUndefined();
+        // Zero ticks is not a valid tick timeframe.
+        expect(toKlines(bars, '0T')[0]!.closeTime).toBeUndefined();
+    });
+
+    it('caps closed tick bars at `now` so clock skew or same-ms bursts never miss barstate.isconfirmed', () => {
+        const now = Date.UTC(2026, 0, 12, 10, 0, 10);
+        const bars = [bar(now - 500), bar(now + 10), bar(now + 11)];
+        const ks = toKlines(bars, '1T', undefined, now);
+        expect(ks[0]!.closeTime).toBe(now);
+        expect(ks[1]!.closeTime).toBe(now);
+        expect(ks[2]!.closeTime).toBeUndefined();
+    });
+});
+
+describe('tick bars through PineTS (barstate.isconfirmed, time_close, strategies, live close)', () => {
+    const recentTickBars = (count: number): OHLCV[] => {
+        const base = Date.now() - count * 2_000;
+        return Array.from({ length: count }, (_, i) => ({
+            time: base + i * 1_500,
+            open: 100 + i,
+            high: 101 + i,
+            low: 99 + i,
+            close: 100.5 + i,
+            volume: 10,
+        }));
+    };
+
+    it('marks every closed tick bar confirmed with next-bar time_close and keeps the forming bar unconfirmed', async () => {
+        const src = `//@version=6
+indicator("Tick barstate", overlay=false)
+plot(barstate.isconfirmed ? 1 : 0, "conf")
+plot(time_close, "tc")
+`;
+        const bars = recentTickBars(6);
+        const prepared = preparePine(src, 'tick-bs');
+        const res = await runPineStatic({
+            ind: indicatorFor({}, src, {}),
+            bars,
+            market: { symbol: 'BTCUSDT', timeframe: '10T' },
+            visibleRange: undefined,
+            prepared,
+            instanceId: 'tick-bs',
+            inputs: {},
+            fetchSeries: undefined,
+        });
+        const model = res.model!;
+        const conf = (model.series.find((s) => s.title === 'conf') as unknown as { points: Array<{ value: number | null }> }).points.map((p) => p.value);
+        const tc = (model.series.find((s) => s.title === 'tc') as unknown as { points: Array<{ value: number | null }> }).points.map((p) => p.value);
+        expect(conf).toEqual([1, 1, 1, 1, 1, 0]);
+        for (let i = 0; i < bars.length - 1; i++) {
+            expect(tc[i]).toBe(bars[i + 1]!.time);
+        }
+    });
+
+    it('fills strategy orders on closed recent tick bars (without calc_on_every_tick)', async () => {
+        const src = `//@version=6
+strategy("Tick strat", overlay=true)
+if bar_index == 1
+    strategy.entry("L", strategy.long)
+if bar_index == 4
+    strategy.close("L")
+`;
+        const bars = recentTickBars(8);
+        const prepared = preparePine(src, 'tick-strat');
+        const res = await runPineStatic({
+            ind: indicatorFor({}, src, {}),
+            bars,
+            market: { symbol: 'BTCUSDT', timeframe: '10T' },
+            visibleRange: undefined,
+            prepared,
+            instanceId: 'tick-strat',
+            inputs: {},
+            fetchSeries: undefined,
+        });
+        expect(res.model?.trades?.length ?? 0).toBeGreaterThanOrEqual(1);
+    });
+
+    it('confirms the previously forming tick bar as soon as the next tick bar opens in a live stream', async () => {
+        const src = `//@version=6
+indicator("Tick live", overlay=false)
+var int confirmed = 0
+if barstate.isconfirmed
+    confirmed += 1
+plot(confirmed, "confirmed")
+plot(barstate.isconfirmed ? 1 : 0, "isconf")
+`;
+        const bars = recentTickBars(5);
+        const prepared = preparePine(src, 'tick-live');
+        const emissions: Array<{ confirmed: number | null; isconf: number | null; len: number }> = [];
+        const stream = openLiveStream({
+            token: prepared.token as never,
+            cache: {},
+            prepared,
+            inputs: {},
+            bars: () => bars,
+            market: () => ({ symbol: 'BTCUSDT', timeframe: '10T' }),
+            onModel: (model) => {
+                const cPts = (model.series.find((s) => s.title === 'confirmed') as unknown as { points: Array<{ value: number | null }> })?.points ?? [];
+                const iPts = (model.series.find((s) => s.title === 'isconf') as unknown as { points: Array<{ value: number | null }> })?.points ?? [];
+                emissions.push({
+                    confirmed: cPts[cPts.length - 1]?.value ?? null,
+                    isconf: iPts[iPts.length - 1]?.value ?? null,
+                    len: cPts.length,
+                });
+            },
+        });
+        try {
+            // Wait for initial historical + forming bar emission.
+            const waitFor = async (pred: () => boolean, timeoutMs = 4000): Promise<void> => {
+                const end = Date.now() + timeoutMs;
+                while (!pred() && Date.now() < end) await new Promise((r) => setTimeout(r, 40));
+            };
+            await waitFor(() => emissions.length >= 1);
+            expect(emissions[emissions.length - 1]).toEqual({ confirmed: 4, isconf: 0, len: 5 });
+
+            // Open bar #5 (bar #4 closes now).
+            const last = bars[bars.length - 1]!;
+            bars.push({ time: last.time + 500, open: last.close, high: last.close + 1, low: last.close, close: last.close + 1, volume: 5 });
+            stream.markDirty();
+            await waitFor(() => emissions.some((e) => e.len === 6));
+            expect(emissions[emissions.length - 1]).toEqual({ confirmed: 5, isconf: 0, len: 6 });
+        } finally {
+            stream.stop();
+        }
     });
 });

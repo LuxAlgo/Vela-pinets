@@ -295,7 +295,7 @@ describe('PineWorkerEngine (proxy)', () => {
         engine.execute(makeReq(), { onModel: () => {} });
         expect(fake.last('execute')).toMatchObject({ footprints: true });
 
-        fake.reply({ kind: 'fetchFootprints', reqId: 9, symbol: 'BTCUSDT', timeframe: '60', range: { from: 1, limit: 2 } });
+        fake.reply({ kind: 'fetchFootprints', reqId: 9, sessionId: fake.last('execute')!.sessionId, symbol: 'BTCUSDT', timeframe: '60', range: { from: 1, limit: 2 } });
         await flush();
         expect(asked).toEqual({ symbol: 'BTCUSDT', timeframe: '60', range: { from: 1, limit: 2 } });
         expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 9, bars: footprintBars });
@@ -307,7 +307,7 @@ describe('PineWorkerEngine (proxy)', () => {
         engine.execute(makeReq(), { onModel: () => {} });
         expect('footprints' in fake.last('execute')!).toBe(false);
 
-        fake.reply({ kind: 'fetchFootprints', reqId: 3, symbol: 'BTCUSDT', timeframe: '60', range: {} });
+        fake.reply({ kind: 'fetchFootprints', reqId: 3, sessionId: fake.last('execute')!.sessionId, symbol: 'BTCUSDT', timeframe: '60', range: {} });
         await flush();
         expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 3, bars: [] });
     });
@@ -321,7 +321,7 @@ describe('PineWorkerEngine (proxy)', () => {
             },
         });
         engine.execute(makeReq(), { onModel: () => {} });
-        fake.reply({ kind: 'fetchFootprints', reqId: 4, symbol: 'BTCUSDT', timeframe: '60', range: {} });
+        fake.reply({ kind: 'fetchFootprints', reqId: 4, sessionId: fake.last('execute')!.sessionId, symbol: 'BTCUSDT', timeframe: '60', range: {} });
         await flush();
         expect(fake.last('fetchFootprintsResult')).toMatchObject({ reqId: 4, error: 'order flow unavailable' });
     });
