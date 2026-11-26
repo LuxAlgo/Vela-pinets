@@ -2,6 +2,32 @@
 
 All notable changes to Vela-pinets, newest first.
 
+## [Unreleased]
+
+### Added
+
+- **Save your own indicators.** New `CustomIndicatorStore`: a library of named,
+  saved custom (Pine) indicators with pluggable persistence. Save / list / get /
+  `update` (merge) / `rename` / `remove` / `clear`, `subscribe` to changes, and turn
+  a saved entry back into a chart addition — `toExternalIndicatorEntry` /
+  `addToChart` emit Vela's `ExternalIndicatorEntry` (saved `inputs`/`props` carried,
+  per-call overrides merged, optional chart `id`). Backends implement two methods
+  (`read` / `write`, sync or async); ships `memoryIndicatorStorage()` (default) and
+  `localStorageIndicatorStorage()` (browser persistence, namespaced key, corrupt-data
+  tolerant, write failures throw). Records read back from storage are untrusted:
+  validated + sanitized (`sanitizeCustomIndicator`); invalid `inputs`/`props` values
+  dropped; malformed entries skipped. Operations are serialized; nothing is cached.
+  Distinct from Vela's chart-state persistence — this persists user-authored scripts,
+  not what's on a chart. The playground **Code** dialog gains name + **Save**, a
+  saved-indicators picker with **Load** / **Delete**, persisted in `localStorage`.
+  Exports: `CustomIndicatorStore`, `CustomIndicatorError`, `memoryIndicatorStorage`,
+  `localStorageIndicatorStorage`, `sanitizeCustomIndicator`,
+  `externalIndicatorEntryFrom`, types `CustomIndicator`, `CustomIndicatorInput`,
+  `CustomIndicatorPatch`, `CustomIndicatorStorage`, `CustomIndicatorStoreOptions`,
+  `CustomIndicatorListener`, `StorageLike`, `MaybePromise`, `AddCustomIndicatorOptions`,
+  `ChartAddIndicatorLike`, consts `DEFAULT_CUSTOM_INDICATOR_LANGUAGE`,
+  `DEFAULT_CUSTOM_INDICATOR_STORAGE_KEY`, `CUSTOM_INDICATOR_STORAGE_VERSION`.
+
 ## [v0.3.5]
 
 ### Added

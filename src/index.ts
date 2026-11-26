@@ -14,3 +14,20 @@ export type { PineLibraryResolver, PineLibraryImport } from './pinets/runtime';
 export type { FootprintSource, FootprintBar, FootprintLevel, FootprintRange } from './pinets/footprints';
 export { PineWorkerEngine } from './pinets-worker/PineWorkerEngine';
 export type { PineWorkerOptions } from './pinets-worker/PineWorkerEngine';
+// Saving your own indicators: a library of named Pine scripts with pluggable
+// persistence (in-memory, localStorage, or any CustomIndicatorStorage), turned back
+// into chart additions (`toExternalIndicatorEntry` / `addToChart`).
+export { CustomIndicatorStore, CustomIndicatorError, memoryIndicatorStorage, localStorageIndicatorStorage, sanitizeCustomIndicator, externalIndicatorEntryFrom } from './indicators/CustomIndicatorStore';
+export { DEFAULT_CUSTOM_INDICATOR_LANGUAGE, DEFAULT_CUSTOM_INDICATOR_STORAGE_KEY, CUSTOM_INDICATOR_STORAGE_VERSION } from './indicators/CustomIndicatorStore';
+export type {
+    CustomIndicator,
+    CustomIndicatorInput,
+    CustomIndicatorPatch,
+    CustomIndicatorStorage,
+    CustomIndicatorStoreOptions,
+    CustomIndicatorListener,
+    StorageLike,
+    MaybePromise,
+    AddCustomIndicatorOptions,
+    ChartAddIndicatorLike,
+} from './indicators/CustomIndicatorStore';
