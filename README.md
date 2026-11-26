@@ -230,6 +230,54 @@ const engine = new PineWorkerEngine({ importResolver });
 A script importing a library the resolver does not know fails to prepare, with an error
 naming the import. Without a resolver, a script with an `import` fails to run.
 
+## Saving your own indicators
+
+The engine runs a script; it doesn't remember which scripts *you* wrote. `CustomIndicatorStore`
+is that missing piece: a library of named, saved custom indicators — your own Pine scripts —
+with pluggable persistence, ready to put back on a chart. It's independent of any chart
+and of Vela's own chart-state persistence (`persist` / `registerStatePersistence`, which
+restores what is on a chart; this restores what you have written).
+
+```ts
+import { CustomIndicatorStore, localStorageIndicatorStorage } from '@luxalgo/vela-pinets';
+
+const library = new CustomIndicatorStore({ storage: localStorageIndicatorStorage() });
+
+// Save your own indicator (name + Pine source; optional language/inputs/props/description).
+const saved = await library.save({
+    name: 'My RSI',
+    script: `//@version=5
+indicator("My RSI", overlay=false)
+plot(ta.rsi(close, 14), color=color.purple)`,
+});
+
+// List / find / edit / delete.
+await library.list();                       // insertion order; fresh copies
+await library.get(saved.id);                // or getByName('My RSI')
+await library.update(saved.id, { name: 'RSI 14' });   // merge patch
+await library.rename(saved.id, 'RSI');
+await library.remove(saved.id);
+await library.clear();
+const unsubscribe = library.subscribe(() => { /* re-read list() */ });
+
+// Put it back on a chart — Vela's ExternalIndicatorEntry, saved inputs/props carried.
+chart.addIndicator(await library.toExternalIndicatorEntry(saved.id)!);
+// or: await library.addToChart(chart, saved.id, { inputs: { len: 21 } });
+```
+
+**Persistence.** The default backend is in-memory (`memoryIndicatorStorage()`); pass
+`localStorageIndicatorStorage()` for browser persistence across reloads (namespaced key
+`vela-pinets.custom-indicators`, JSON `{ version, indicators }`, `key` override; corrupt
+data reads empty, a failed write throws). Or implement two methods — `read(): unknown[]`
+and `write(indicators): void`, sync or async — over anything (file, IndexedDB, backend).
+**Saved records are untrusted on the way out**: every record read back is validated and
+sanitized (`sanitizeCustomIndicator`); malformed entries are dropped, `inputs`/`props`
+are filtered to `number | string | boolean`. Operations are serialized (no lost updates)
+and never cached. `save` replaces on an existing `id` (keeps `createdAt`, bumps
+`updatedAt`); `update` merges; `save`/`update` throw `CustomIndicatorError` on an empty
+name or script. This is engine-agnostic — saved `language` rides through; `'pine'` is
+the default.
+
 ## Development
 
 ```bash

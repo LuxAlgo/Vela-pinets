@@ -7,7 +7,7 @@ import { VelaWidget } from '@luxalgo/vela/widget';
 import { BinanceProvider } from '@luxalgo/vela/providers/binance';
 import { registerWidgetAction, registerIcon, type WidgetContext } from '@luxalgo/vela/plugin';
 import { Dialog } from '@luxalgo/vela/ui';
-import { PineWorkerEngine } from '../src';
+import { PineWorkerEngine, CustomIndicatorStore, localStorageIndicatorStorage } from '../src';
 
 // Worker-path instrumentation: count real Web Worker spawns so a browser probe can
 // PROVE Pine runs off the main thread through the addon (window.__workerSpawns >= 1).
@@ -102,6 +102,75 @@ let codeArea: HTMLTextAreaElement | null = null;
 let codeStatus: HTMLElement | null = null;
 let codeRun: HTMLButtonElement | null = null;
 
+// Saving your own indicators: the page's library of named Pine scripts, persisted in
+// localStorage under a namespaced key (the CustomIndicatorStore API from this package).
+const customIndicators = new CustomIndicatorStore({ storage: localStorageIndicatorStorage() });
+let codeName: HTMLInputElement | null = null;
+let codeSaved: HTMLSelectElement | null = null;
+let codeSave: HTMLButtonElement | null = null;
+let codeLoad: HTMLButtonElement | null = null;
+let codeDelete: HTMLButtonElement | null = null;
+
+async function refreshSavedIndicators(): Promise<void> {
+    if (!codeSaved) return;
+    const selected = codeSaved.value;
+    const saved = await customIndicators.list();
+    codeSaved.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = saved.length ? 'My saved indicators…' : 'No saved indicators yet';
+    codeSaved.append(placeholder);
+    for (const ind of saved) {
+        const opt = document.createElement('option');
+        opt.value = ind.id;
+        opt.textContent = ind.name;
+        codeSaved.append(opt);
+    }
+    if (selected && saved.some((i) => i.id === selected)) codeSaved.value = selected;
+}
+
+async function saveOwnIndicator(): Promise<void> {
+    if (!codeArea || !codeStatus || !codeName) return;
+    const name = codeName.value.trim();
+    if (!name) {
+        codeStatus.style.color = 'var(--vela-danger)';
+        codeStatus.textContent = '✗ Give your indicator a name to save it';
+        return;
+    }
+    try {
+        const saved = await customIndicators.save({ name, script: codeArea.value });
+        await refreshSavedIndicators();
+        if (codeSaved) codeSaved.value = saved.id;
+        codeStatus.style.color = 'var(--vela-accent)';
+        codeStatus.textContent = `✓ Saved “${saved.name}”`;
+    } catch (e) {
+        codeStatus.style.color = 'var(--vela-danger)';
+        codeStatus.textContent = `✗ ${e instanceof Error ? e.message : String(e)}`;
+    }
+}
+
+async function loadOwnIndicator(): Promise<void> {
+    if (!codeArea || !codeSaved) return;
+    const id = codeSaved.value;
+    if (!id) return;
+    const ind = await customIndicators.get(id);
+    if (!ind) return;
+    codeArea.value = ind.script;
+    if (codeName) codeName.value = ind.name;
+}
+
+async function deleteOwnIndicator(): Promise<void> {
+    if (!codeSaved || !codeStatus) return;
+    const id = codeSaved.value;
+    if (!id) return;
+    const removed = await customIndicators.remove(id);
+    await refreshSavedIndicators();
+    if (removed && codeStatus) {
+        codeStatus.style.color = 'var(--vela-fg-muted)';
+        codeStatus.textContent = 'Deleted saved indicator';
+    }
+}
+
 registerWidgetAction({
     id: 'pinets.code',
     target: 'topbar',
@@ -127,19 +196,50 @@ plot(ta.rsi(close, 14), color=color.purple)`;
             codeRun.textContent = 'Run';
             codeRun.style.cssText =
                 'all:unset;margin-top:8px;padding:6px 18px;border-radius:var(--vela-radius-sm);background:var(--vela-accent);color:#0b0e14;font-weight:600;cursor:pointer;';
+            // ── Save your own indicator: name + Save, then pick it back from the list ──
+            const buttonCss =
+                'all:unset;margin-top:8px;padding:6px 14px;border-radius:var(--vela-radius-sm);background:var(--vela-surface-raised);color:var(--vela-fg);border:1px solid var(--vela-border-soft);font-weight:600;cursor:pointer;';
+            const savedRow = document.createElement('div');
+            savedRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;';
+            codeName = document.createElement('input');
+            codeName.type = 'text';
+            codeName.placeholder = 'Name your indicator…';
+            codeName.style.cssText =
+                'flex:1;min-width:140px;padding:6px 10px;border-radius:var(--vela-radius-sm);background:var(--vela-surface-overlay);color:var(--vela-fg);border:1px solid var(--vela-border-soft);font-size:var(--vela-font-size-md);outline:none;';
+            codeSave = document.createElement('button');
+            codeSave.textContent = 'Save';
+            codeSave.style.cssText = buttonCss;
+            codeSave.onclick = () => void saveOwnIndicator();
+            const savedPickRow = document.createElement('div');
+            savedPickRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;';
+            codeSaved = document.createElement('select');
+            codeSaved.style.cssText =
+                'flex:1;min-width:140px;padding:6px 10px;border-radius:var(--vela-radius-sm);background:var(--vela-surface-overlay);color:var(--vela-fg);border:1px solid var(--vela-border-soft);font-size:var(--vela-font-size-md);outline:none;';
+            codeSaved.onchange = () => void loadOwnIndicator();
+            codeLoad = document.createElement('button');
+            codeLoad.textContent = 'Load';
+            codeLoad.style.cssText = buttonCss;
+            codeLoad.onclick = () => void loadOwnIndicator();
+            codeDelete = document.createElement('button');
+            codeDelete.textContent = 'Delete';
+            codeDelete.style.cssText = buttonCss;
+            codeDelete.onclick = () => void deleteOwnIndicator();
+            savedRow.append(codeName, codeSave);
+            savedPickRow.append(codeSaved, codeLoad, codeDelete);
             codeStatus = document.createElement('div');
             codeStatus.style.cssText = 'margin-top:8px;min-height:1.3em;font-size:var(--vela-font-size-md);white-space:pre-wrap;';
             codeDialog = new Dialog({
                 title: 'Run a Pine indicator',
                 host: ctx.host, // first invoker's root hosts the singleton (fine for the one-widget page)
                 closeOnInteractOutside: true,
-                content: (body) => body.append(codeArea!, codeRun!, codeStatus!),
+                content: (body) => body.append(codeArea!, codeRun!, savedRow, savedPickRow, codeStatus!),
             });
         }
         // Rebind per invocation — `ctx` stays in this closure, no module-level context.
         codeRun!.onclick = () => void runCode(ctx);
         codeStatus!.textContent = '';
         codeDialog.show();
+        void refreshSavedIndicators();
         setTimeout(() => codeArea?.focus(), 0);
     },
 });
